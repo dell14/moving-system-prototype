@@ -21,9 +21,8 @@ type Action =
       type: "availability/add";
       payload: {
         employeeName: string;
-        dateISO: string;
-        startTime: string;
-        endTime: string;
+        dayOfWeek: "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday" | "Sunday";
+        shift: "morning" | "evening" | "all_day";
       };
     }
   | { type: "availability/remove"; payload: { id: string } }
@@ -112,11 +111,15 @@ function reducer(state: AppState, action: Action): AppState {
     }
 
     case "availability/add": {
-      db.availability = [
-        { id: uid("av"), ...action.payload },
-        ...db.availability,
-      ];
-      return { db: { ...db } };
+      return {
+        db: {
+          ...db,
+          availability: [
+            { id: uid("av"), ...action.payload },
+            ...db.availability,
+          ],
+        },
+      };
     }
 
     case "availability/remove": {

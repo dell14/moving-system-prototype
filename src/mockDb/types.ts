@@ -51,12 +51,22 @@ export interface Feedback {
   message: string;
 }
 
+export type DayOfWeek =
+  | "Monday"
+  | "Tuesday"
+  | "Wednesday"
+  | "Thursday"
+  | "Friday"
+  | "Saturday"
+  | "Sunday";
+
+export type Shift = "morning" | "evening" | "all_day";
+
 export interface EmployeeAvailability {
   id: Id;
   employeeName: string;
-  dateISO: string; // YYYY-MM-DD
-  startTime: string; // HH:mm
-  endTime: string; // HH:mm
+  dayOfWeek: DayOfWeek;
+  shift: Shift;
 }
 
 export interface TimeSlot {
