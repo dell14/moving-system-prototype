@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
+import type { AuthMode } from "@/src/features/auth/types";
 
 export default function LoginPage() {
   const { state, dispatch } = useAppStore();
@@ -11,6 +12,9 @@ export default function LoginPage() {
     [state.db.activeUserId, state.db.users],
   );
 
+  const [mode, setMode] = useState<AuthMode>("login");
+  const [name, setName] = useState(activeUser?.name ?? "");
+  const [role, setRole] = useState<"customer" | "manager">("customer");
   const [email, setEmail] = useState(
     activeUser?.email ?? "customer@example.com",
   );
@@ -25,7 +29,9 @@ export default function LoginPage() {
         </Link>
 
         <header className="space-y-1">
-          <h1 className="text-2xl font-semibold">Log in (mock)</h1>
+          <h1 className="text-2xl font-semibold">
+            {mode === "login" ? "Log in" : "Register"} (mock)
+          </h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             Demo users: <span className="font-mono">customer@example.com</span>{" "}
             / <span className="font-mono">manager@example.com</span> (password:{" "}
@@ -39,7 +45,12 @@ export default function LoginPage() {
               <p className="text-sm">
                 Signed in as{" "}
                 <span className="font-semibold">{activeUser.name}</span> (
-                <span className="font-mono">{activeUser.email}</span>)
+                <span className="font-mono">{activeUser.email}</span>) •{" "}
+                <span className="font-semibold">
+                  {activeUser.role === "manager"
+                    ? "Admin (operations manager)"
+                    : "Customer"}
+                </span>
               </p>
               <button
                 className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900"
@@ -54,13 +65,108 @@ export default function LoginPage() {
               onSubmit={(e) => {
                 e.preventDefault();
                 setError(null);
-                const before = state.db.activeUserId;
-                dispatch({ type: "auth/login", payload: { email, password } });
-                const after = state.db.activeUserId;
-                if (!before && !after)
-                  setError("Invalid credentials (mock). Try the demo users.");
+
+                if (mode === "login") {
+                  const before = state.db.activeUserId;
+                  dispatch({
+                    type: "auth/login",
+                    payload: { email, password },
+                  });
+                  const after = state.db.activeUserId;
+                  if (!before && !after)
+                    setError(
+                      "Invalid credentials (mock). Try the demo users.",
+                    );
+                  return;
+                }
+
+                if (!name.trim()) {
+                  setError("Please enter a name for the account.");
+                  return;
+                }
+
+                const beforeCount = state.db.users.length;
+                dispatch({
+                  type: "auth/register",
+                  payload: {
+                    name: name.trim(),
+                    email,
+                    password,
+                    role,
+                  },
+                });
+                const afterCount = state.db.users.length;
+                if (afterCount === beforeCount) {
+                  setError(
+                    "That email is already registered. Try logging in instead.",
+                  );
+                }
               }}
             >
+              <div className="flex gap-2 rounded-lg bg-zinc-100 p-1 text-sm dark:bg-zinc-900">
+                <button
+                  type="button"
+                  className={`flex-1 rounded-md px-3 py-1.5 ${
+                    mode === "login"
+                      ? "bg-white font-semibold shadow-sm dark:bg-zinc-950"
+                      : "text-zinc-500"
+                  }`}
+                  onClick={() => {
+                    setMode("login");
+                    setError(null);
+                  }}
+                >
+                  Log in
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 rounded-md px-3 py-1.5 ${
+                    mode === "register"
+                      ? "bg-white font-semibold shadow-sm dark:bg-zinc-950"
+                      : "text-zinc-500"
+                  }`}
+                  onClick={() => {
+                    setMode("register");
+                    setError(null);
+                  }}
+                >
+                  Register
+                </button>
+              </div>
+
+              {mode === "register" ? (
+                <>
+                  <label className="block space-y-1">
+                    <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Full name
+                    </div>
+                    <input
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </label>
+
+                  <label className="block space-y-1">
+                    <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Account type
+                    </div>
+                    <select
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                      value={role}
+                      onChange={(e) =>
+                        setRole(e.target.value as "customer" | "manager")
+                      }
+                    >
+                      <option value="customer">Customer</option>
+                      <option value="manager">
+                        Admin (operations manager)
+                      </option>
+                    </select>
+                  </label>
+                </>
+              ) : null}
+
               <label className="block space-y-1">
                 <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Email
@@ -87,7 +193,7 @@ export default function LoginPage() {
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
               <button className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900">
-                Log in
+                {mode === "login" ? "Log in" : "Create account"}
               </button>
             </form>
           )}
