@@ -11,6 +11,15 @@ type AppState = {
 type Action =
   | { type: "db/reset" }
   | { type: "auth/login"; payload: { email: string; password: string } }
+  | {
+      type: "auth/register";
+      payload: {
+        name: string;
+        email: string;
+        password: string;
+        role: "customer" | "manager";
+      };
+    }
   | { type: "auth/logout" }
   | {
       type: "inventory/add";
@@ -89,6 +98,27 @@ function reducer(state: AppState, action: Action): AppState {
       );
       if (!user) return state;
       db.activeUserId = user.id;
+      return { db: { ...db } };
+    }
+
+    case "auth/register": {
+      const { name, email, password, role } = action.payload;
+      const existing = db.users.find(
+        (u) => u.email.toLowerCase() === email.toLowerCase(),
+      );
+      if (existing) return state;
+      const userId = uid("user");
+      db.users = [
+        {
+          id: userId,
+          email,
+          password,
+          name,
+          role,
+        },
+        ...db.users,
+      ];
+      db.activeUserId = userId;
       return { db: { ...db } };
     }
 
