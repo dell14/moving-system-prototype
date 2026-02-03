@@ -25,7 +25,7 @@ export interface Quote {
   id: Id;
   userId: Id;
   createdAtMs: number;
-  expiresAtMs: number; // createdAt + 24h
+  expiresAtMs: number; // createdAt + 24h (mocked to 3 minutes in UI)
   input: QuoteInput;
   totalCents: number;
   status: "active" | "expired" | "accepted" | "declined";
