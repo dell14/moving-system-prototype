@@ -83,7 +83,7 @@ function calcQuoteTotalCents(input: {
 }
 
 function reducer(state: AppState, action: Action): AppState {
-  const db = structuredClone(state.db);
+  const db = state.db;
 
   switch (action.type) {
     case "db/reset": {

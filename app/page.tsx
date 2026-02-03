@@ -28,6 +28,11 @@ export default function Home() {
                 </Link>
               </li>
               <li>
+                <Link className="underline" href="/booking">
+                  Confirm booking + deposit (UC-03)
+                </Link>
+              </li>
+              <li>
                 <Link className="underline" href="/feedback">
                   Send feedback (UC-04)
                 </Link>
