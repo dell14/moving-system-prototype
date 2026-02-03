@@ -377,7 +377,7 @@ export default function QuotePage() {
                       deposit is required.
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-                      <span>Mock 24h timer (3 min):</span>
+                      <span>Mock 24h timer:</span>
                       {selectedQuote.status === "expired" ||
                       timeRemainingMs === 0 ? (
                         <span className="font-semibold text-red-600">

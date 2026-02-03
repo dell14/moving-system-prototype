@@ -255,7 +255,7 @@ export default function QuotePaymentPage() {
               ) : isExpired ? (
                 <span className="text-red-600">Quote expired.</span>
               ) : (
-                "Timer is running (mock 24h → 3 min)."
+                "Timer is running (mock 24h → 1 min)."
               )}
             </div>
           </aside>
