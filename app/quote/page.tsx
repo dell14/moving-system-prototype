@@ -1,12 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
+
+type QuoteFormErrors = {
+  fromAddress?: string;
+  toAddress?: string;
+  moveDateISO?: string;
+  moveTime?: string;
+  distanceKm?: string;
+  itemsCount?: string;
+  form?: string;
+};
 
 export default function QuotePage() {
   const { state, dispatch } = useAppStore();
+  const router = useRouter();
   const activeUser = useMemo(
     () => state.db.users.find((u) => u.id === state.db.activeUserId),
     [state.db.activeUserId, state.db.users],
@@ -22,9 +34,8 @@ export default function QuotePage() {
   const [hasPacking, setHasPacking] = useState(false);
   const [hasStorage, setHasStorage] = useState(false);
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
-  const [depositAmount, setDepositAmount] = useState("150");
-  const [showPayment, setShowPayment] = useState(false);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<QuoteFormErrors>({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const myQuotes = useMemo(() => {
     if (!activeUser) return [];
@@ -44,6 +55,32 @@ export default function QuotePage() {
     if (!selectedQuote) return undefined;
     return state.db.bookings.find((b) => b.quoteId === selectedQuote.id);
   }, [selectedQuote, state.db.bookings]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setNowMs(now);
+      dispatch({ type: "quote/expireSweep", payload: { nowMs: now } });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [dispatch]);
+
+  const timeRemainingMs = selectedQuote
+    ? Math.max(0, selectedQuote.expiresAtMs - nowMs)
+    : 0;
+  const timeRemainingLabel = selectedQuote
+    ? `${Math.floor(timeRemainingMs / 60000)
+        .toString()
+        .padStart(2, "0")}:${Math.floor((timeRemainingMs % 60000) / 1000)
+        .toString()
+        .padStart(2, "0")}`
+    : "00:00";
+
+  const isQuoteInactive =
+    !selectedQuote ||
+    selectedQuote.status === "expired" ||
+    selectedQuote.status === "declined" ||
+    timeRemainingMs === 0;
 
   return (
     <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
@@ -81,6 +118,24 @@ export default function QuotePage() {
               className="space-y-3 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950"
               onSubmit={(e) => {
                 e.preventDefault();
+                const nextErrors: QuoteFormErrors = {};
+                if (!fromAddress.trim())
+                  nextErrors.fromAddress = "Enter a pickup address.";
+                if (!toAddress.trim())
+                  nextErrors.toAddress = "Enter a drop-off address.";
+                if (!moveDateISO.trim())
+                  nextErrors.moveDateISO = "Select a move date.";
+                if (!moveTime.trim())
+                  nextErrors.moveTime = "Select a move time.";
+                if (!Number.isFinite(distanceKm) || distanceKm <= 0)
+                  nextErrors.distanceKm = "Distance must be greater than 0.";
+                if (!Number.isFinite(itemsCount) || itemsCount <= 0)
+                  nextErrors.itemsCount = "Items must be greater than 0.";
+                if (Object.keys(nextErrors).length > 0) {
+                  setFormErrors(nextErrors);
+                  return;
+                }
+                setFormErrors({});
                 dispatch({
                   type: "quote/create",
                   payload: {
@@ -95,8 +150,6 @@ export default function QuotePage() {
                   },
                 });
                 setSelectedQuoteId(null);
-                setShowPayment(false);
-                setPaymentError(null);
               }}
             >
               <div className="text-sm font-semibold">Quote form</div>
@@ -110,6 +163,11 @@ export default function QuotePage() {
                   value={fromAddress}
                   onChange={(e) => setFromAddress(e.target.value)}
                 />
+                {formErrors.fromAddress ? (
+                  <p className="text-xs text-red-600">
+                    {formErrors.fromAddress}
+                  </p>
+                ) : null}
               </label>
 
               <label className="block space-y-1">
@@ -121,6 +179,9 @@ export default function QuotePage() {
                   value={toAddress}
                   onChange={(e) => setToAddress(e.target.value)}
                 />
+                {formErrors.toAddress ? (
+                  <p className="text-xs text-red-600">{formErrors.toAddress}</p>
+                ) : null}
               </label>
 
               <div className="grid grid-cols-2 gap-3">
@@ -133,6 +194,11 @@ export default function QuotePage() {
                     value={moveDateISO}
                     onChange={(e) => setMoveDateISO(e.target.value)}
                   />
+                  {formErrors.moveDateISO ? (
+                    <p className="text-xs text-red-600">
+                      {formErrors.moveDateISO}
+                    </p>
+                  ) : null}
                 </label>
                 <label className="block space-y-1">
                   <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
@@ -143,6 +209,11 @@ export default function QuotePage() {
                     value={moveTime}
                     onChange={(e) => setMoveTime(e.target.value)}
                   />
+                  {formErrors.moveTime ? (
+                    <p className="text-xs text-red-600">
+                      {formErrors.moveTime}
+                    </p>
+                  ) : null}
                 </label>
               </div>
 
@@ -155,9 +226,14 @@ export default function QuotePage() {
                     className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                     value={distanceKm}
                     type="number"
-                    min={0}
+                    min={1}
                     onChange={(e) => setDistanceKm(Number(e.target.value))}
                   />
+                  {formErrors.distanceKm ? (
+                    <p className="text-xs text-red-600">
+                      {formErrors.distanceKm}
+                    </p>
+                  ) : null}
                 </label>
                 <label className="block space-y-1">
                   <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
@@ -167,9 +243,14 @@ export default function QuotePage() {
                     className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                     value={itemsCount}
                     type="number"
-                    min={0}
+                    min={1}
                     onChange={(e) => setItemsCount(Number(e.target.value))}
                   />
+                  {formErrors.itemsCount ? (
+                    <p className="text-xs text-red-600">
+                      {formErrors.itemsCount}
+                    </p>
+                  ) : null}
                 </label>
               </div>
 
@@ -231,8 +312,6 @@ export default function QuotePage() {
                         type="button"
                         onClick={() => {
                           setSelectedQuoteId(q.id);
-                          setShowPayment(false);
-                          setPaymentError(null);
                         }}
                       >
                         Use this quote for booking
@@ -297,71 +376,53 @@ export default function QuotePage() {
                       Confirm this quote to reserve your move. A refundable
                       deposit is required.
                     </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+                      <span>Mock 24h timer:</span>
+                      {selectedQuote.status === "expired" ||
+                      timeRemainingMs === 0 ? (
+                        <span className="font-semibold text-red-600">
+                          Quote expired
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                          {timeRemainingLabel}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  {!showPayment ? (
+                  <div className="flex flex-wrap items-center gap-3">
                     <button
-                      className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900"
+                      className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-300 dark:bg-zinc-50 dark:text-zinc-900 dark:disabled:bg-zinc-700"
                       type="button"
+                      disabled={isQuoteInactive}
                       onClick={() => {
-                        setShowPayment(true);
-                        setPaymentError(null);
+                        if (!selectedQuote) return;
+                        router.push(`/quote/payment?quoteId=${selectedQuote.id}`);
                       }}
                     >
                       Accept quote & continue
                     </button>
-                  ) : (
-                    <form
-                      className="space-y-3 rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        setPaymentError(null);
-                        const amount = Number(depositAmount);
-                        if (!amount || amount <= 0) {
-                          setPaymentError("Enter a valid deposit amount.");
-                          return;
-                        }
+                    <button
+                      className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 disabled:cursor-not-allowed disabled:text-zinc-400 dark:border-zinc-700 dark:text-zinc-200"
+                      type="button"
+                      disabled={isQuoteInactive}
+                      onClick={() => {
+                        if (!selectedQuote) return;
                         dispatch({
-                          type: "booking/confirm",
-                          payload: {
-                            quoteId: selectedQuote.id,
-                            depositCents: Math.round(amount * 100),
-                          },
+                          type: "quote/reject",
+                          payload: { quoteId: selectedQuote.id },
                         });
                       }}
                     >
-                      <div className="text-xs font-semibold">
-                        Mock deposit payment
-                      </div>
-                      <label className="block space-y-1">
-                        <div className="text-xs text-zinc-500">
-                          Deposit amount (USD)
-                        </div>
-                        <input
-                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                          value={depositAmount}
-                          onChange={(event) =>
-                            setDepositAmount(event.target.value)
-                          }
-                        />
-                      </label>
-                      <label className="block space-y-1">
-                        <div className="text-xs text-zinc-500">
-                          Card number (mock)
-                        </div>
-                        <input
-                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                          placeholder="4242 4242 4242 4242"
-                        />
-                      </label>
-                      {paymentError ? (
-                        <p className="text-xs text-red-600">{paymentError}</p>
-                      ) : null}
-                      <button className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900">
-                        Pay deposit & reserve
-                      </button>
-                    </form>
-                  )}
+                      Reject quote
+                    </button>
+                  </div>
+                  {selectedQuote.status === "declined" ? (
+                    <p className="text-xs text-zinc-500">
+                      You declined this quote.
+                    </p>
+                  ) : null}
                 </div>
               )}
             </div>
