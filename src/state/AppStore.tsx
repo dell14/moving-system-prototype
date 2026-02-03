@@ -57,6 +57,7 @@ type Action =
         hasStorage: boolean;
       };
     }
+  | { type: "quote/reject"; payload: { quoteId: string } }
   | { type: "quote/expireSweep"; payload?: { nowMs?: number } }
   | {
       type: "booking/confirm";
@@ -82,7 +83,7 @@ function calcQuoteTotalCents(input: {
 }
 
 function reducer(state: AppState, action: Action): AppState {
-  const db = state.db;
+  const db = structuredClone(state.db);
 
   switch (action.type) {
     case "db/reset": {
@@ -174,7 +175,7 @@ function reducer(state: AppState, action: Action): AppState {
       const userId = db.activeUserId;
       if (!userId) return state;
       const createdAtMs = Date.now();
-      const expiresAtMs = createdAtMs + 24 * 60 * 60 * 1000;
+      const expiresAtMs = createdAtMs + 60 * 1000;
       const totalCents = calcQuoteTotalCents(action.payload);
       db.quotes = [
         {
@@ -188,6 +189,14 @@ function reducer(state: AppState, action: Action): AppState {
         },
         ...db.quotes,
       ];
+      return { db: { ...db } };
+    }
+
+    case "quote/reject": {
+      const quote = db.quotes.find((q) => q.id === action.payload.quoteId);
+      if (!quote) return state;
+      if (quote.status !== "active") return state;
+      quote.status = "declined";
       return { db: { ...db } };
     }
 
