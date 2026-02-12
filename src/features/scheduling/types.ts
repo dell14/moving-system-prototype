@@ -1,4 +1,7 @@
-export type TimeRange = {
-  startTime: string; // HH:mm
-  endTime: string; // HH:mm
+export type { DayOfWeek, Shift } from "@/src/mockDb/types";
+
+export type AvailabilityFormState = {
+  employeeName: string;
+  dayOfWeek: string;
+  shift: string;
 };

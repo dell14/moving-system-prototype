@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
+import { checkInventory } from "@/src/features/inventory/checkInventory";
 
 export default function InventoryPage() {
   const { state, dispatch } = useAppStore();
@@ -49,6 +50,29 @@ export default function InventoryPage() {
             to manager to edit inventory.
           </div>
         ) : (
+          <div className="space-y-4">
+            {(() => {
+              const { enough, message } = checkInventory(state.db.inventory);
+              return (
+                <div
+                  className={`rounded-xl border p-4 text-sm ${
+                    enough
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200"
+                      : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+                  }`}
+                >
+                  <div className="font-medium">
+                    {enough ? "Inventory status: OK" : "Inventory status: Low stock"}
+                  </div>
+                  <textarea
+                    readOnly
+                    rows={2}
+                    value={message}
+                    className="mt-1 w-full resize-none border-0 bg-transparent p-0 text-inherit focus:ring-0"
+                  />
+                </div>
+              );
+            })()}
           <div className="grid gap-4 lg:grid-cols-2">
             <form
               className="space-y-3 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950"
@@ -148,6 +172,7 @@ export default function InventoryPage() {
                 ))}
               </ul>
             </div>
+          </div>
           </div>
         )}
       </main>
