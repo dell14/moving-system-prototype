@@ -178,7 +178,7 @@ function reducer(state: AppState, action: Action): AppState {
       const userId = db.activeUserId;
       if (!userId) return state;
       const createdAtMs = Date.now();
-      const expiresAtMs = createdAtMs + 60 * 1000;
+      const expiresAtMs = createdAtMs + 3 * 60 * 1000;
       const totalCents = calcQuoteTotalCents(action.payload);
       db.quotes = [
         {
@@ -269,3 +269,4 @@ export function useAppStore() {
   if (!ctx) throw new Error("useAppStore must be used inside AppStoreProvider");
   return ctx;
 }
+
