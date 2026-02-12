@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
 
 type PaymentErrors = {
@@ -17,8 +17,10 @@ type PaymentErrors = {
 
 export default function QuotePaymentPage() {
   const { state, dispatch } = useAppStore();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const quoteId = searchParams.get("quoteId");
+  const promptedOutcomeKeyRef = useRef<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [amount, setAmount] = useState("150");
   const [name, setName] = useState("");
@@ -42,6 +44,11 @@ export default function QuotePaymentPage() {
     return state.db.quotes.find((q) => q.id === quoteId);
   }, [quoteId, state.db.quotes]);
 
+  const activeUser = useMemo(
+    () => state.db.users.find((u) => u.id === state.db.activeUserId),
+    [state.db.activeUserId, state.db.users],
+  );
+
   const booking = useMemo(() => {
     if (!quote) return undefined;
     return state.db.bookings.find((b) => b.quoteId === quote.id);
@@ -49,6 +56,42 @@ export default function QuotePaymentPage() {
 
   const isExpired = quote ? quote.expiresAtMs <= nowMs : false;
   const isDeclined = quote?.status === "declined";
+
+  useEffect(() => {
+    if (!activeUser || !quote || !quoteId || booking) return;
+
+    const context =
+      isDeclined ? "declined_quote" : isExpired ? "expired_quote" : null;
+    if (!context) return;
+
+    const alreadySubmitted = state.db.feedback.some(
+      (feedback) =>
+        feedback.userId === activeUser.id &&
+        feedback.quoteId === quote.id &&
+        feedback.context === context,
+    );
+    if (alreadySubmitted) return;
+
+    const promptKey = `${context}:${quote.id}`;
+    if (promptedOutcomeKeyRef.current === promptKey) return;
+    promptedOutcomeKeyRef.current = promptKey;
+
+    const query = new URLSearchParams({
+      context,
+      quoteId,
+      returnTo: `/quote/payment?quoteId=${quoteId}`,
+    });
+    router.push(`/feedback/quote-outcome?${query.toString()}`);
+  }, [
+    activeUser,
+    booking,
+    isDeclined,
+    isExpired,
+    quote,
+    quoteId,
+    router,
+    state.db.feedback,
+  ]);
 
   if (!quoteId || !quote) {
     return (

@@ -39,6 +39,7 @@ type Action =
       type: "feedback/add";
       payload: {
         context: "post_service" | "declined_quote" | "expired_quote";
+        quoteId?: string;
         rating?: 1 | 2 | 3 | 4 | 5;
         message: string;
       };
@@ -162,6 +163,33 @@ function reducer(state: AppState, action: Action): AppState {
 
     case "feedback/add": {
       const activeUserId = db.activeUserId;
+      const { context, quoteId } = action.payload;
+
+      if (!activeUserId || !quoteId) return state;
+      const quote = db.quotes.find((q) => q.id === quoteId);
+      if (!quote || quote.userId !== activeUserId) return state;
+
+      if (context === "post_service") {
+        const booking = db.bookings.find((b) => b.quoteId === quoteId);
+        if (!booking || booking.userId !== activeUserId) return state;
+      }
+
+      if (context === "declined_quote" && quote.status !== "declined") {
+        return state;
+      }
+
+      if (context === "expired_quote" && quote.status !== "expired") {
+        return state;
+      }
+
+      const alreadySubmitted = db.feedback.some(
+        (f) =>
+          f.context === context &&
+          f.userId === activeUserId &&
+          f.quoteId === quoteId,
+      );
+      if (alreadySubmitted) return state;
+
       db.feedback = [
         {
           id: uid("fb"),

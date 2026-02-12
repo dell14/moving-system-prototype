@@ -29,7 +29,7 @@ export default function Home() {
               </li>
               <li>
                 <Link className="underline" href="/feedback">
-                  Send feedback (UC-04)
+                  Rate your service (UC-04)
                 </Link>
               </li>
             </ul>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
 
 type QuoteFormErrors = {
@@ -36,6 +36,7 @@ export default function QuotePage() {
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<QuoteFormErrors>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const promptedExpiredQuoteIdsRef = useRef<Set<string>>(new Set());
 
   const myQuotes = useMemo(() => {
     if (!activeUser) return [];
@@ -81,6 +82,37 @@ export default function QuotePage() {
     selectedQuote.status === "expired" ||
     selectedQuote.status === "declined" ||
     timeRemainingMs === 0;
+
+  const selectedQuoteHasExpiredFeedback = useMemo(() => {
+    if (!activeUser || !selectedQuote) return false;
+    return state.db.feedback.some(
+      (feedback) =>
+        feedback.userId === activeUser.id &&
+        feedback.quoteId === selectedQuote.id &&
+        feedback.context === "expired_quote",
+    );
+  }, [activeUser, selectedQuote, state.db.feedback]);
+
+  useEffect(() => {
+    if (!activeUser || !selectedQuote) return;
+    if (selectedQuote.status !== "expired") return;
+    if (bookingForSelected || selectedQuoteHasExpiredFeedback) return;
+    if (promptedExpiredQuoteIdsRef.current.has(selectedQuote.id)) return;
+
+    promptedExpiredQuoteIdsRef.current.add(selectedQuote.id);
+    const query = new URLSearchParams({
+      context: "expired_quote",
+      quoteId: selectedQuote.id,
+      returnTo: "/quote",
+    });
+    router.push(`/feedback/quote-outcome?${query.toString()}`);
+  }, [
+    activeUser,
+    bookingForSelected,
+    router,
+    selectedQuote,
+    selectedQuoteHasExpiredFeedback,
+  ]);
 
   return (
     <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
@@ -409,10 +441,16 @@ export default function QuotePage() {
                       disabled={isQuoteInactive}
                       onClick={() => {
                         if (!selectedQuote) return;
+                        const query = new URLSearchParams({
+                          context: "declined_quote",
+                          quoteId: selectedQuote.id,
+                          returnTo: "/quote",
+                        });
                         dispatch({
                           type: "quote/reject",
                           payload: { quoteId: selectedQuote.id },
                         });
+                        router.push(`/feedback/quote-outcome?${query.toString()}`);
                       }}
                     >
                       Reject quote

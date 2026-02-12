@@ -45,6 +45,7 @@ export interface Booking {
 export interface Feedback {
   id: Id;
   userId?: Id;
+  quoteId?: Id;
   createdAtMs: number;
   context: "post_service" | "declined_quote" | "expired_quote";
   rating?: 1 | 2 | 3 | 4 | 5;
