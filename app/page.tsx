@@ -19,17 +19,22 @@ export default function Home() {
             <ul className="mt-3 space-y-2 text-sm">
               <li>
                 <Link className="underline" href="/login">
-                  Log in / Register (UC-01)
+                  Log in
+                </Link>
+              </li>
+              <li>
+                <Link className="underline" href="/register">
+                  Register
                 </Link>
               </li>
               <li>
                 <Link className="underline" href="/quote">
-                  Generate quote (UC-02)
+                  Generate quote
                 </Link>
               </li>
               <li>
                 <Link className="underline" href="/feedback">
-                  Rate your service (UC-04)
+                  Rate your service
                 </Link>
               </li>
             </ul>
@@ -40,12 +45,12 @@ export default function Home() {
             <ul className="mt-3 space-y-2 text-sm">
               <li>
                 <Link className="underline" href="/admin/schedule">
-                  Schedule employees (UC-05)
+                  Schedule employees
                 </Link>
               </li>
               <li>
                 <Link className="underline" href="/admin/inventory">
-                  Check inventory (UC-06)
+                  Check inventory
                 </Link>
               </li>
             </ul>
