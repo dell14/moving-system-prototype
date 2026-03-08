@@ -1,8 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useMemo, useReducer } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useReducer } from "react";
 import type { MockDb } from "@/src/mockDb/types";
-import { getDb, resetDb } from "@/src/mockDb/db";
+import { getDb, resetDb, saveDb } from "@/src/mockDb/db";
 import {
   addAvailability,
   addInventoryItem,
@@ -10,6 +10,8 @@ import {
   createQuote,
   expireQuotes,
   loginUser,
+  markAllNotificationsRead,
+  markNotificationRead,
   logoutUser,
   registerUser,
   rejectQuote,
@@ -73,6 +75,11 @@ type Action =
     }
   | { type: "quote/reject"; payload: { quoteId: string } }
   | { type: "quote/expireSweep"; payload?: { nowMs?: number } }
+  | {
+      type: "notification/markRead";
+      payload: { notificationId: string; nowMs?: number };
+    }
+  | { type: "notification/markAllRead"; payload?: { nowMs?: number } }
   | {
       type: "booking/confirm";
       payload: { quoteId: string; depositCents: number };
@@ -146,7 +153,23 @@ function reducer(state: AppState, action: Action): AppState {
     }
 
     case "quote/expireSweep": {
-      expireQuotes(db, action.payload?.nowMs);
+      expireQuotes(db, action.payload?.nowMs, uid);
+      return { db: { ...db } };
+    }
+
+    case "notification/markRead": {
+      const didUpdate = markNotificationRead(
+        db,
+        action.payload.notificationId,
+        action.payload.nowMs,
+      );
+      if (!didUpdate) return state;
+      return { db: { ...db } };
+    }
+
+    case "notification/markAllRead": {
+      const didUpdate = markAllNotificationsRead(db, action.payload?.nowMs);
+      if (!didUpdate) return state;
       return { db: { ...db } };
     }
 
@@ -170,6 +193,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
     db: getDb(),
   }));
+
+  useEffect(() => {
+    saveDb(state.db);
+  }, [state.db]);
 
   const value = useMemo(() => ({ state, dispatch }), [state]);
 

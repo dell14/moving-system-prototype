@@ -124,12 +124,18 @@ export interface Feedback {
 
 export interface NotificationRecord {
   id: Id;
+  type: "quote_expiring_soon" | "quote_expired" | "no_timeslots_available" | "booking_confirmation";
+  title: string;
   serviceId: number;
   channel: string;
   message: string;
   status: string;
+  createdAtMs: number;
   scheduledForMs: number;
   sentAtMs?: number;
+  readAtMs?: number;
+  recipientRole?: UserRole;
+  recipientUserId?: Id;
   relatedUserId?: Id;
   relatedQuoteId?: Id;
   relatedBookingId?: Id;

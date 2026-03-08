@@ -2,7 +2,7 @@ import type { MockDb } from "./types";
 
 export const seedDb = (): MockDb => {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     users: [
       {
         id: "u_customer_1",

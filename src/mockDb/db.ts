@@ -2,7 +2,8 @@ import type { DayOfWeek, MockDb, Shift, UserRole } from "./types";
 import { seedDb } from "./seed";
 
 const GLOBAL_KEY = "__speedshift_mock_db__";
-const CURRENT_SCHEMA_VERSION = 2;
+const STORAGE_KEY = "speedshift_mock_db";
+const CURRENT_SCHEMA_VERSION = 3;
 
 type GlobalWithDb = typeof globalThis & {
   [GLOBAL_KEY]?: MockDb;
@@ -337,14 +338,33 @@ function migrateDb(rawDb: unknown): MockDb {
 
   const notifications = asArray(record.notifications).map((value) => {
     const note = asRecord(value);
+    const typeRaw = asString(note.type, "booking_confirmation");
+    const type: "quote_expiring_soon" | "quote_expired" | "no_timeslots_available" | "booking_confirmation" =
+      typeRaw === "quote_expiring_soon" ||
+      typeRaw === "quote_expired" ||
+      typeRaw === "no_timeslots_available" ||
+      typeRaw === "booking_confirmation"
+        ? typeRaw
+        : "booking_confirmation";
+    const createdAtMs = asNumber(note.createdAtMs, asNumber(note.scheduledForMs, Date.now()));
     return {
       id: asString(note.id, `ntf_${Date.now()}`),
+      type,
+      title: asString(note.title, "Notification"),
       serviceId: asNumber(note.serviceId, parseNumericId(note.id)),
       channel: asString(note.channel, "email"),
       message: asString(note.message, ""),
       status: asString(note.status, "queued"),
+      createdAtMs,
       scheduledForMs: asNumber(note.scheduledForMs, Date.now()),
       sentAtMs: note.sentAtMs === undefined ? undefined : asNumber(note.sentAtMs, 0),
+      readAtMs: note.readAtMs === undefined ? undefined : asNumber(note.readAtMs, 0),
+      recipientRole:
+        note.recipientRole === undefined
+          ? undefined
+          : normalizeUserRole(asString(note.recipientRole, "customer")),
+      recipientUserId:
+        note.recipientUserId === undefined ? undefined : asString(note.recipientUserId),
       relatedUserId:
         note.relatedUserId === undefined ? undefined : asString(note.relatedUserId),
       relatedQuoteId:
@@ -369,9 +389,31 @@ function migrateDb(rawDb: unknown): MockDb {
   };
 }
 
+function readDbFromStorage(): MockDb | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return undefined;
+    return migrateDb(JSON.parse(raw));
+  } catch {
+    return undefined;
+  }
+}
+
+function persistDbToStorage(db: MockDb): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  } catch {
+    // Storage failures are non-fatal for mock persistence.
+  }
+}
+
 export function getDb(): MockDb {
   const g = getGlobal();
-  if (!g[GLOBAL_KEY]) g[GLOBAL_KEY] = seedDb();
+  if (!g[GLOBAL_KEY]) {
+    g[GLOBAL_KEY] = readDbFromStorage() ?? seedDb();
+  }
   g[GLOBAL_KEY] = migrateDb(g[GLOBAL_KEY]);
   return g[GLOBAL_KEY]!;
 }
@@ -379,5 +421,13 @@ export function getDb(): MockDb {
 export function resetDb(): MockDb {
   const g = getGlobal();
   g[GLOBAL_KEY] = seedDb();
+  persistDbToStorage(g[GLOBAL_KEY]!);
+  return g[GLOBAL_KEY]!;
+}
+
+export function saveDb(nextDb: MockDb): MockDb {
+  const g = getGlobal();
+  g[GLOBAL_KEY] = migrateDb(nextDb);
+  persistDbToStorage(g[GLOBAL_KEY]!);
   return g[GLOBAL_KEY]!;
 }

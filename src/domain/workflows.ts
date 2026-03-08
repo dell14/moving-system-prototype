@@ -22,6 +22,12 @@ import {
 type IdFactory = (prefix: string) => string;
 
 const QUOTE_EXPIRY_WINDOW_MS = 3 * 60 * 1000;
+const DEFAULT_QUOTE_EXPIRING_SOON_WINDOW_MS = 60 * 1000;
+const QUOTE_EXPIRING_SOON_WINDOW_MS = (() => {
+  const envValue = Number(process.env.NEXT_PUBLIC_QUOTE_EXPIRING_SOON_WINDOW_MS ?? "");
+  if (Number.isFinite(envValue) && envValue > 0) return envValue;
+  return DEFAULT_QUOTE_EXPIRING_SOON_WINDOW_MS;
+})();
 
 function parseNumericId(rawId: string): number {
   const digits = rawId.replace(/\D+/g, "");
@@ -61,6 +67,89 @@ function addHoursToTime(time: string, hours: number): string {
 function findActiveUser(db: MockDb) {
   if (!db.activeUserId) return undefined;
   return db.users.find((user) => user.id === db.activeUserId);
+}
+
+function getManagerUsers(db: MockDb) {
+  return db.users.filter((user) => user.role === "manager" || user.role === "owner");
+}
+
+function createSystemId(prefix: string) {
+  return `${prefix}_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function createNotification(
+  db: MockDb,
+  input: {
+    idFactory?: IdFactory;
+    type: "quote_expiring_soon" | "quote_expired" | "no_timeslots_available" | "booking_confirmation";
+    title: string;
+    message: string;
+    nowMs: number;
+    recipientUserId?: string;
+    recipientRole?: "customer" | "manager" | "owner";
+    relatedUserId?: string;
+    relatedQuoteId?: string;
+    relatedBookingId?: string;
+  },
+): void {
+  const duplicate = db.notifications.some((note) => {
+    const sameRecipient =
+      (input.recipientUserId ? note.recipientUserId === input.recipientUserId : true) &&
+      (input.recipientRole ? note.recipientRole === input.recipientRole : true);
+    return (
+      note.type === input.type &&
+      sameRecipient &&
+      note.relatedQuoteId === input.relatedQuoteId &&
+      note.relatedBookingId === input.relatedBookingId
+    );
+  });
+  if (duplicate) return;
+
+  const notificationId = input.idFactory?.("ntf") ?? createSystemId("ntf");
+  db.notifications = [
+    {
+      id: notificationId,
+      type: input.type,
+      title: input.title,
+      serviceId: input.nowMs,
+      channel: "in_app",
+      message: input.message,
+      status: "sent",
+      createdAtMs: input.nowMs,
+      scheduledForMs: input.nowMs,
+      sentAtMs: input.nowMs,
+      readAtMs: undefined,
+      recipientRole: input.recipientRole,
+      recipientUserId: input.recipientUserId,
+      relatedUserId: input.relatedUserId,
+      relatedQuoteId: input.relatedQuoteId,
+      relatedBookingId: input.relatedBookingId,
+    },
+    ...db.notifications,
+  ];
+}
+
+function getDayOfWeek(dateISO: string): string {
+  const date = new Date(`${dateISO}T00:00:00`);
+  const labels = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ] as const;
+  return labels[date.getDay()] ?? "Monday";
+}
+
+function shiftToWindow(shift: "morning" | "evening" | "all_day"): {
+  startTime: string;
+  endTime: string;
+} {
+  if (shift === "morning") return { startTime: "08:00", endTime: "12:00" };
+  if (shift === "evening") return { startTime: "13:00", endTime: "17:00" };
+  return { startTime: "09:00", endTime: "17:00" };
 }
 
 export function loginUser(db: MockDb, email: string, password: string): boolean {
@@ -246,7 +335,11 @@ export function rejectQuote(db: MockDb, quoteId: string): boolean {
   return true;
 }
 
-export function expireQuotes(db: MockDb, nowMs = Date.now()): void {
+export function expireQuotes(
+  db: MockDb,
+  nowMs = Date.now(),
+  idFactory?: IdFactory,
+): void {
   db.quotes = db.quotes.map((quoteRecord) => {
     const quoteModel = toDomainQuote(quoteRecord);
     if (
@@ -256,6 +349,41 @@ export function expireQuotes(db: MockDb, nowMs = Date.now()): void {
       quoteModel.expire(nowMs);
     }
     return toDbQuote(quoteModel, quoteRecord);
+  });
+
+  db.quotes.forEach((quoteRecord) => {
+    if (!quoteRecord.userId) return;
+    if (quoteRecord.status === "active") {
+      const msToExpiry = quoteRecord.expiresAtMs - nowMs;
+      if (msToExpiry > 0 && msToExpiry <= QUOTE_EXPIRING_SOON_WINDOW_MS) {
+        createNotification(db, {
+          idFactory,
+          type: "quote_expiring_soon",
+          title: "Quote expiring soon",
+          message: "Your quote will expire soon.",
+          nowMs,
+          recipientUserId: quoteRecord.userId,
+          recipientRole: "customer",
+          relatedUserId: quoteRecord.userId,
+          relatedQuoteId: quoteRecord.id,
+        });
+      }
+      return;
+    }
+
+    if (quoteRecord.status === "expired") {
+      createNotification(db, {
+        idFactory,
+        type: "quote_expired",
+        title: "Quote expired",
+        message: "Your quote has expired.",
+        nowMs,
+        recipientUserId: quoteRecord.userId,
+        recipientRole: "customer",
+        relatedUserId: quoteRecord.userId,
+        relatedQuoteId: quoteRecord.id,
+      });
+    }
   });
 }
 
@@ -338,10 +466,27 @@ export function confirmBooking(
   const paymentModel = toDomainPayment(nowMs, input.depositCents, "USD");
   if (!paymentModel.processPayment()) return false;
   quoteModel.accept();
+  const quoteDayOfWeek = getDayOfWeek(quoteRecord.input.moveDateISO);
+  const generatedSlots = db.availability
+    .filter((availability) => availability.dayOfWeek === quoteDayOfWeek)
+    .map((availability) => {
+      const slotId = idFactory("slot");
+      const slotWindow = shiftToWindow(availability.shift);
+      return {
+        id: slotId,
+        slotId: parseNumericId(slotId),
+        availabilityId: parseNumericId(availability.id),
+        dateISO: quoteRecord.input.moveDateISO,
+        startTime: slotWindow.startTime,
+        endTime: slotWindow.endTime,
+        status: "available" as const,
+      };
+    });
+  if (generatedSlots.length > 0) {
+    db.timeSlots = [...generatedSlots, ...db.timeSlots];
+  }
 
-  const availableSlotRecords = db.timeSlots.filter(
-    (slotRecord) => slotRecord.status === "available",
-  );
+  const availableSlotRecords = db.timeSlots.filter((slotRecord) => slotRecord.status === "available");
   const allAvailableSlots = availableSlotRecords.map((slotRecord) =>
     toDomainServiceSlot(slotRecord),
   );
@@ -372,6 +517,22 @@ export function confirmBooking(
     } catch {
       // Fall through to creating a reserved slot.
     }
+  }
+
+  if (!selectedSlot) {
+    getManagerUsers(db).forEach((managerUser) => {
+      createNotification(db, {
+        idFactory,
+        type: "no_timeslots_available",
+        title: "No available time slots",
+        message: `No available time slots could be generated for quote/order #${quoteRecord.id}. Please manually review employee availability.`,
+        nowMs,
+        recipientUserId: managerUser.id,
+        recipientRole: managerUser.role,
+        relatedQuoteId: quoteRecord.id,
+        relatedUserId: managerUser.id,
+      });
+    });
   }
 
   const slotExists = db.timeSlots.some((slot) => slot.id === scheduledSlotId);
@@ -436,12 +597,18 @@ export function confirmBooking(
   db.notifications = [
     {
       id: notificationId,
+      type: "booking_confirmation",
+      title: "Booking confirmed",
       serviceId: nowMs,
       channel: "email",
       message: "booking_confirmation",
       status: "sent",
+      createdAtMs: nowMs,
       scheduledForMs: nowMs,
       sentAtMs: nowMs,
+      readAtMs: undefined,
+      recipientRole: "customer",
+      recipientUserId: activeUser.id,
       relatedUserId: activeUser.id,
       relatedQuoteId: quoteRecord.id,
       relatedBookingId: bookingTemplate.id,
@@ -449,4 +616,55 @@ export function confirmBooking(
     ...db.notifications,
   ];
   return true;
+}
+
+export function markNotificationRead(
+  db: MockDb,
+  notificationId: string,
+  nowMs = Date.now(),
+): boolean {
+  let didUpdate = false;
+  const activeUser = findActiveUser(db);
+  if (!activeUser) return false;
+
+  db.notifications = db.notifications.map((notification) => {
+    if (notification.id !== notificationId) return notification;
+    if (notification.recipientUserId && notification.recipientUserId !== activeUser.id) {
+      return notification;
+    }
+    if (
+      notification.recipientRole &&
+      notification.recipientRole !== activeUser.role
+    ) {
+      return notification;
+    }
+    if (notification.readAtMs) return notification;
+    didUpdate = true;
+    return {
+      ...notification,
+      readAtMs: nowMs,
+      status: "read",
+    };
+  });
+
+  return didUpdate;
+}
+
+export function markAllNotificationsRead(db: MockDb, nowMs = Date.now()): boolean {
+  const activeUser = findActiveUser(db);
+  if (!activeUser) return false;
+  let didUpdate = false;
+  db.notifications = db.notifications.map((notification) => {
+    const matchesUser =
+      (!notification.recipientUserId || notification.recipientUserId === activeUser.id) &&
+      (!notification.recipientRole || notification.recipientRole === activeUser.role);
+    if (!matchesUser || notification.readAtMs) return notification;
+    didUpdate = true;
+    return {
+      ...notification,
+      readAtMs: nowMs,
+      status: "read",
+    };
+  });
+  return didUpdate;
 }
