@@ -5,6 +5,15 @@ import { useRouter } from "next/navigation";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
+import {
+  getBookingDepositCents,
+  getQuoteDistanceKm,
+  getQuoteExpiresAtMs,
+  getQuoteFromAddress,
+  getQuoteItemsCount,
+  getQuoteToAddress,
+  getQuoteTotalCents,
+} from "@/src/domain/viewAdapters";
 
 type QuoteFormErrors = {
   fromAddress?: string;
@@ -67,7 +76,7 @@ export default function QuotePage() {
   }, [dispatch]);
 
   const timeRemainingMs = selectedQuote
-    ? Math.max(0, selectedQuote.expiresAtMs - nowMs)
+    ? Math.max(0, getQuoteExpiresAtMs(selectedQuote) - nowMs)
     : 0;
   const timeRemainingLabel = selectedQuote
     ? `${Math.floor(timeRemainingMs / 60000)
@@ -330,14 +339,14 @@ export default function QuotePage() {
                         <span className="text-xs">{q.status}</span>
                       </div>
                       <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                        Expires: {new Date(q.expiresAtMs).toLocaleString()}
+                        Expires: {new Date(getQuoteExpiresAtMs(q)).toLocaleString()}
                       </div>
                       <div className="mt-2 font-semibold">
-                        ${(q.totalCents / 100).toFixed(2)}
+                        ${(getQuoteTotalCents(q) / 100).toFixed(2)}
                       </div>
                       <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                        {q.input.fromAddress} → {q.input.toAddress} (
-                        {q.input.distanceKm}km, {q.input.itemsCount} items)
+                        {getQuoteFromAddress(q)} → {getQuoteToAddress(q)} (
+                        {getQuoteDistanceKm(q)}km, {getQuoteItemsCount(q)} items)
                       </div>
                       <button
                         className="mt-3 text-xs font-medium text-zinc-700 underline dark:text-zinc-200"
@@ -388,7 +397,7 @@ export default function QuotePage() {
                   </div>
                   <div>
                     Deposit paid: $
-                    {(bookingForSelected.depositCents / 100).toFixed(2)}
+                    {(getBookingDepositCents(bookingForSelected) / 100).toFixed(2)}
                   </div>
                   <div className="text-xs text-emerald-900/80 dark:text-emerald-100/70">
                     We’ll hold your time slot and follow up with the operations
@@ -401,7 +410,7 @@ export default function QuotePage() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-zinc-500">Quote total</span>
                       <span className="font-semibold">
-                        ${(selectedQuote.totalCents / 100).toFixed(2)}
+                        ${(getQuoteTotalCents(selectedQuote) / 100).toFixed(2)}
                       </span>
                     </div>
                     <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">

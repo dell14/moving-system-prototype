@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
+import { getUserDisplayName, getUserPasswordHashOrLegacy } from "@/src/domain/viewAdapters";
 
 export default function LoginPage() {
   const { state, dispatch } = useAppStore();
@@ -40,7 +41,7 @@ export default function LoginPage() {
           {activeUser ? (
             <div className="space-y-3">
               <p className="text-sm">
-                Signed in as <span className="font-semibold">{activeUser.name}</span> (
+                Signed in as <span className="font-semibold">{getUserDisplayName(activeUser)}</span> (
                 <span className="font-mono">{activeUser.email}</span>) {"-"}{" "}
                 <span className="font-semibold">
                   {activeUser.role === "manager"
@@ -66,7 +67,7 @@ export default function LoginPage() {
                 const isValid = state.db.users.some(
                   (u) =>
                     u.email.toLowerCase() === normalizedEmail &&
-                    u.password === password,
+                    getUserPasswordHashOrLegacy(u) === password,
                 );
 
                 if (!isValid) {

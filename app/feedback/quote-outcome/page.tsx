@@ -4,6 +4,14 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
+import {
+  getQuoteFromAddress,
+  getQuoteItemsCount,
+  getQuoteMoveDateISO,
+  getQuoteMoveTime,
+  getQuoteToAddress,
+  getQuoteTotalCents,
+} from "@/src/domain/viewAdapters";
 
 type OutcomeContext = "declined_quote" | "expired_quote";
 
@@ -206,13 +214,13 @@ export default function QuoteOutcomeFeedbackPage() {
               </div>
               <div>Status: {quote.status}</div>
               <div>
-                Move: {quote.input.moveDateISO} at {quote.input.moveTime}
+                Move: {getQuoteMoveDateISO(quote)} at {getQuoteMoveTime(quote)}
               </div>
               <div>
-                Route: {quote.input.fromAddress} to {quote.input.toAddress}
+                Route: {getQuoteFromAddress(quote)} to {getQuoteToAddress(quote)}
               </div>
-              <div>Items: {quote.input.itemsCount}</div>
-              <div>Total: ${(quote.totalCents / 100).toFixed(2)}</div>
+              <div>Items: {getQuoteItemsCount(quote)}</div>
+              <div>Total: ${(getQuoteTotalCents(quote) / 100).toFixed(2)}</div>
             </div>
           </div>
         </div>

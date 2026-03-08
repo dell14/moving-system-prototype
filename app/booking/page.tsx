@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
+import { getBookingDepositCents, getQuoteTotalCents } from "@/src/domain/viewAdapters";
 
 export default function BookingPage() {
   const { state, dispatch } = useAppStore();
@@ -82,7 +83,7 @@ export default function BookingPage() {
                   </option>
                   {activeQuotes.map((q) => (
                     <option key={q.id} value={q.id}>
-                      {q.id} (${(q.totalCents / 100).toFixed(2)}) [{q.status}]
+                      {q.id} (${(getQuoteTotalCents(q) / 100).toFixed(2)}) [{q.status}]
                     </option>
                   ))}
                 </select>
@@ -143,7 +144,7 @@ export default function BookingPage() {
                         Quote: {b.quoteId}
                       </div>
                       <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                        Deposit: ${(b.depositCents / 100).toFixed(2)}
+                        Deposit: ${(getBookingDepositCents(b) / 100).toFixed(2)}
                       </div>
                     </li>
                   ))

@@ -1,6 +1,7 @@
 import type { InventoryItem } from "@/src/mockDb/types";
+import { toDomainInventoryItem } from "@/src/domain/classes";
 
-// Minimum quantities for a small moving company (2–3 moves/day)
+// Minimum quantities for a small moving company (2-3 moves/day)
 const THRESHOLDS: Record<string, number> = {
   dollies: 2,
   blankets: 20,
@@ -11,8 +12,9 @@ export function checkInventory(inventory: InventoryItem[]): {
   enough: boolean;
   message: string;
 } {
+  const inventoryModels = inventory.map((item) => toDomainInventoryItem(item));
   const byName = Object.fromEntries(
-    inventory.map((i) => [i.name.toLowerCase(), i.quantity])
+    inventoryModels.map((item) => [item.itemType.toLowerCase(), item.quantity]),
   );
 
   const low: string[] = [];
@@ -27,12 +29,13 @@ export function checkInventory(inventory: InventoryItem[]): {
   if (low.length === 0) {
     return {
       enough: true,
-      message: "Inventory levels look good. You have enough dollies, blankets, and straps for upcoming moves.",
+      message:
+        "Inventory levels look good. You have enough dollies, blankets, and straps for upcoming moves.",
     };
   }
 
   return {
     enough: false,
-    message: `Low stock — reorder soon: ${low.join("; ")}`,
+    message: `Low stock - reorder soon: ${low.join("; ")}`,
   };
 }

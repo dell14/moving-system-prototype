@@ -4,10 +4,21 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
 import type { Quote } from "@/src/mockDb/types";
+import {
+  getBookingDepositCents,
+  getBookingPaidAtMs,
+  getFeedbackMessage,
+  getFeedbackSubmittedAtMs,
+  getQuoteFromAddress,
+  getQuoteMoveDateISO,
+  getQuoteMoveTime,
+  getQuoteToAddress,
+  getQuoteTotalCents,
+} from "@/src/domain/viewAdapters";
 
 type PaidJob = {
   bookingId: string;
-  bookingCreatedAtMs: number;
+  bookingPaidAtMs: number;
   depositCents: number;
   quoteId: string;
   fromAddress: string;
@@ -47,18 +58,18 @@ export default function FeedbackPage() {
         if (!quote) return undefined;
         return {
           bookingId: booking.id,
-          bookingCreatedAtMs: booking.createdAtMs,
-          depositCents: booking.depositCents,
+          bookingPaidAtMs: getBookingPaidAtMs(booking),
+          depositCents: getBookingDepositCents(booking),
           quoteId: quote.id,
-          fromAddress: quote.input.fromAddress,
-          toAddress: quote.input.toAddress,
-          moveDateISO: quote.input.moveDateISO,
-          moveTime: quote.input.moveTime,
-          totalCents: quote.totalCents,
+          fromAddress: getQuoteFromAddress(quote),
+          toAddress: getQuoteToAddress(quote),
+          moveDateISO: getQuoteMoveDateISO(quote),
+          moveTime: getQuoteMoveTime(quote),
+          totalCents: getQuoteTotalCents(quote),
         };
       })
       .filter((job): job is PaidJob => Boolean(job))
-      .sort((a, b) => b.bookingCreatedAtMs - a.bookingCreatedAtMs);
+      .sort((a, b) => b.bookingPaidAtMs - a.bookingPaidAtMs);
   }, [activeUser, state.db.bookings, state.db.quotes]);
 
   const myPostServiceFeedback = useMemo(() => {
@@ -73,7 +84,7 @@ export default function FeedbackPage() {
     if (!activeUser) return [];
     return state.db.feedback
       .filter((feedback) => feedback.userId === activeUser.id)
-      .sort((a, b) => b.createdAtMs - a.createdAtMs);
+      .sort((a, b) => getFeedbackSubmittedAtMs(b) - getFeedbackSubmittedAtMs(a));
   }, [activeUser, state.db.feedback]);
 
   const ratedQuoteIds = useMemo(
@@ -264,7 +275,7 @@ export default function FeedbackPage() {
                           </div>
                           <div className="mt-1 text-xs text-zinc-500">
                             Paid on{" "}
-                            {new Date(job.bookingCreatedAtMs).toLocaleString()} | Quote{" "}
+                            {new Date(job.bookingPaidAtMs).toLocaleString()} | Quote{" "}
                             <span className="font-mono">{job.quoteId}</span>
                           </div>
                         </li>
@@ -315,15 +326,15 @@ export default function FeedbackPage() {
                           </div>
                         ) : quote ? (
                           <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                            {quote.input.moveDateISO} {quote.input.moveTime} |{" "}
-                            {quote.input.fromAddress} to {quote.input.toAddress}
+                            {getQuoteMoveDateISO(quote)} {getQuoteMoveTime(quote)} |{" "}
+                            {getQuoteFromAddress(quote)} to {getQuoteToAddress(quote)}
                           </div>
                         ) : null}
                         <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                          {new Date(feedback.createdAtMs).toLocaleString()}
+                          {new Date(getFeedbackSubmittedAtMs(feedback)).toLocaleString()}
                         </div>
                         <div className="mt-2 whitespace-pre-wrap">
-                          {feedback.message}
+                          {getFeedbackMessage(feedback)}
                         </div>
                       </li>
                     );

@@ -5,6 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
+import {
+  getBookingDepositCents,
+  getQuoteExpiresAtMs,
+  getQuoteFromAddress,
+  getQuoteToAddress,
+  getQuoteTotalCents,
+} from "@/src/domain/viewAdapters";
 
 type PaymentErrors = {
   amount?: string;
@@ -54,7 +61,7 @@ export default function QuotePaymentPage() {
     return state.db.bookings.find((b) => b.quoteId === quote.id);
   }, [quote, state.db.bookings]);
 
-  const isExpired = quote ? quote.expiresAtMs <= nowMs : false;
+  const isExpired = quote ? getQuoteExpiresAtMs(quote) <= nowMs : false;
   const isDeclined = quote?.status === "declined";
 
   useEffect(() => {
@@ -135,7 +142,7 @@ export default function QuotePaymentPage() {
                   Booking ID: <span className="font-mono">{booking.id}</span>
                 </div>
                 <div>
-                  Deposit paid: ${(booking.depositCents / 100).toFixed(2)}
+                  Deposit paid: ${(getBookingDepositCents(booking) / 100).toFixed(2)}
                 </div>
                 <p className="mt-2 text-xs text-emerald-900/80 dark:text-emerald-100/70">
                   We’ll email your confirmation shortly.
@@ -286,11 +293,11 @@ export default function QuotePaymentPage() {
             <div className="flex items-center justify-between">
               <span className="text-xs text-zinc-500">Total</span>
               <span className="font-semibold">
-                ${(quote.totalCents / 100).toFixed(2)}
+                ${(getQuoteTotalCents(quote) / 100).toFixed(2)}
               </span>
             </div>
             <div className="text-xs text-zinc-500">
-              {quote.input.fromAddress} → {quote.input.toAddress}
+              {getQuoteFromAddress(quote)} → {getQuoteToAddress(quote)}
             </div>
             <div className="rounded-lg border border-dashed border-zinc-200 p-3 text-xs text-zinc-500 dark:border-zinc-700">
               {isDeclined ? (
