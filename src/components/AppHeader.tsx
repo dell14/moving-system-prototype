@@ -67,6 +67,20 @@ export function AppHeader() {
         </Link>
 
         <div className="relative flex items-center gap-4">
+          <button
+            type="button"
+            className="text-[11px] text-zinc-400 transition hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+            onClick={() => {
+              const shouldReset = window.confirm(
+                "Reset all demo data and start from a fresh site state?",
+              );
+              if (!shouldReset) return;
+              setIsPanelOpen(false);
+              dispatch({ type: "db/reset" });
+            }}
+          >
+            Reset demo data
+          </button>
           {hydratedActiveUser ? (
             <div className="text-xs text-zinc-600 dark:text-zinc-400">
               {hydratedActiveUser.email} ({hydratedActiveUser.role})
