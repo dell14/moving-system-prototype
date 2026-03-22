@@ -328,6 +328,55 @@ export function createQuote(
   return true;
 }
 
+export function updateQuote(
+  db: MockDb,
+  input: { quoteId: string; updates: QuoteInput },
+  nowMs = Date.now(),
+): boolean {
+  const activeUser = findActiveUser(db);
+  if (!activeUser) return false;
+
+  const quoteRecord = db.quotes.find((record) => record.id === input.quoteId);
+  if (!quoteRecord || quoteRecord.userId !== activeUser.id) return false;
+
+  const hasPayment = db.payments.some((payment) => payment.quoteId === quoteRecord.id);
+  const hasBooking = db.bookings.some((booking) => booking.quoteId === quoteRecord.id);
+  const isExpired =
+    quoteRecord.status === "expired" || quoteRecord.expiresAtMs <= nowMs;
+  if (hasPayment || hasBooking || isExpired || quoteRecord.status === "declined") {
+    return false;
+  }
+
+  const nextTotalCents = calculateQuoteTotalCents(input.updates);
+  const quoteModel = toDomainQuote(quoteRecord);
+  quoteModel.startAddress = input.updates.fromAddress;
+  quoteModel.endAddress = input.updates.toAddress;
+  quoteModel.distance = `${input.updates.distanceKm}km`;
+  quoteModel.apartmentSize = `${input.updates.itemsCount} items`;
+  quoteModel.qtyResidents = Math.max(1, Math.ceil(input.updates.itemsCount / 15));
+  quoteModel.serviceOption =
+    input.updates.hasPacking || input.updates.hasStorage
+      ? [input.updates.hasPacking ? "packing" : "", input.updates.hasStorage ? "storage" : ""]
+          .filter(Boolean)
+          .join("+")
+      : "move_only";
+  quoteModel.totalCost = nextTotalCents / 100;
+
+  db.quotes = db.quotes.map((record) =>
+    record.id === quoteRecord.id
+      ? toDbQuote(quoteModel, {
+          ...record,
+          input: input.updates,
+          totalCents: nextTotalCents,
+          status: record.status === "accepted" ? "active" : record.status,
+          heldSlotId: undefined,
+        })
+      : record,
+  );
+
+  return true;
+}
+
 export function rejectQuote(db: MockDb, quoteId: string): boolean {
   const quote = db.quotes.find((record) => record.id === quoteId);
   if (!quote || quote.status !== "active") return false;

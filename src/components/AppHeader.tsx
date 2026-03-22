@@ -11,26 +11,41 @@ function formatTimestamp(timestampMs: number): string {
 export function AppHeader() {
   const { state, dispatch } = useAppStore();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      setHasMounted(true);
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
 
   const activeUser = useMemo(
     () => state.db.users.find((user) => user.id === state.db.activeUserId),
     [state.db.activeUserId, state.db.users],
   );
+  const hydratedActiveUser = hasMounted ? activeUser : undefined;
 
   const visibleNotifications = useMemo(() => {
-    if (!activeUser) return [];
+    if (!hydratedActiveUser) return [];
     return state.db.notifications
       .filter((notification) => {
-        if (notification.recipientUserId && notification.recipientUserId !== activeUser.id) {
+        if (
+          notification.recipientUserId &&
+          notification.recipientUserId !== hydratedActiveUser.id
+        ) {
           return false;
         }
-        if (notification.recipientRole && notification.recipientRole !== activeUser.role) {
+        if (
+          notification.recipientRole &&
+          notification.recipientRole !== hydratedActiveUser.role
+        ) {
           return false;
         }
         return true;
       })
       .sort((a, b) => b.createdAtMs - a.createdAtMs);
-  }, [activeUser, state.db.notifications]);
+  }, [hydratedActiveUser, state.db.notifications]);
 
   const unreadCount = useMemo(
     () => visibleNotifications.filter((notification) => !notification.readAtMs).length,
@@ -52,12 +67,12 @@ export function AppHeader() {
         </Link>
 
         <div className="relative flex items-center gap-4">
-          {activeUser ? (
+          {hydratedActiveUser ? (
             <div className="text-xs text-zinc-600 dark:text-zinc-400">
-              {activeUser.email} ({activeUser.role})
+              {hydratedActiveUser.email} ({hydratedActiveUser.role})
             </div>
           ) : null}
-          {activeUser ? (
+          {hydratedActiveUser ? (
             <button
               type="button"
               aria-label="Notifications"
@@ -83,7 +98,7 @@ export function AppHeader() {
             </button>
           ) : null}
 
-          {activeUser && isPanelOpen ? (
+          {hydratedActiveUser && isPanelOpen ? (
             <div className="absolute right-0 top-12 w-96 rounded-xl border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
               <div className="mb-2 flex items-center justify-between">
                 <div className="text-sm font-semibold">Notifications</div>

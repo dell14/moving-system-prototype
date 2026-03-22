@@ -18,6 +18,7 @@ import {
   removeAvailability,
   removeInventoryItem,
   submitFeedback,
+  updateQuote,
 } from "@/src/domain/workflows";
 
 type AppState = {
@@ -71,6 +72,22 @@ type Action =
         itemsCount: number;
         hasPacking: boolean;
         hasStorage: boolean;
+      };
+    }
+  | {
+      type: "quote/update";
+      payload: {
+        quoteId: string;
+        updates: {
+          fromAddress: string;
+          toAddress: string;
+          moveDateISO: string;
+          moveTime: string;
+          distanceKm: number;
+          itemsCount: number;
+          hasPacking: boolean;
+          hasStorage: boolean;
+        };
       };
     }
   | { type: "quote/reject"; payload: { quoteId: string } }
@@ -143,6 +160,12 @@ function reducer(state: AppState, action: Action): AppState {
     case "quote/create": {
       const didCreate = createQuote(db, action.payload, uid);
       if (!didCreate) return state;
+      return { db: { ...db } };
+    }
+
+    case "quote/update": {
+      const didUpdate = updateQuote(db, action.payload);
+      if (!didUpdate) return state;
       return { db: { ...db } };
     }
 

@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAppStore } from "@/src/state/AppStore";
+import { QuoteForm } from "@/src/components/QuoteForm";
 import {
   getBookingDepositCents,
   getQuoteDistanceKm,
@@ -14,36 +13,30 @@ import {
   getQuoteToAddress,
   getQuoteTotalCents,
 } from "@/src/domain/viewAdapters";
+import type { QuoteFormState } from "@/src/features/quotes/types";
+import { useAppStore } from "@/src/state/AppStore";
 
-type QuoteFormErrors = {
-  fromAddress?: string;
-  toAddress?: string;
-  moveDateISO?: string;
-  moveTime?: string;
-  distanceKm?: string;
-  itemsCount?: string;
-  form?: string;
+const defaultQuoteFormValues: QuoteFormState = {
+  fromAddress: "123 Main St",
+  toAddress: "456 Oak Ave",
+  moveDateISO: "2026-02-03",
+  moveTime: "10:00",
+  distanceKm: 12,
+  itemsCount: 25,
+  hasPacking: false,
+  hasStorage: false,
 };
 
 export default function QuotePage() {
   const { state, dispatch } = useAppStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const activeUser = useMemo(
     () => state.db.users.find((u) => u.id === state.db.activeUserId),
     [state.db.activeUserId, state.db.users],
   );
 
-  const [fromAddress, setFromAddress] = useState("123 Main St");
-  const [toAddress, setToAddress] = useState("456 Oak Ave");
-  // Keep this deterministic for lint purity rules (no Date.now() during render).
-  const [moveDateISO, setMoveDateISO] = useState("2026-02-03");
-  const [moveTime, setMoveTime] = useState("10:00");
-  const [distanceKm, setDistanceKm] = useState(12);
-  const [itemsCount, setItemsCount] = useState(25);
-  const [hasPacking, setHasPacking] = useState(false);
-  const [hasStorage, setHasStorage] = useState(false);
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
-  const [formErrors, setFormErrors] = useState<QuoteFormErrors>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const promptedExpiredQuoteIdsRef = useRef<Set<string>>(new Set());
 
@@ -52,19 +45,27 @@ export default function QuotePage() {
     return state.db.quotes.filter((q) => q.userId === activeUser.id);
   }, [activeUser, state.db.quotes]);
 
-  const latestQuote = useMemo(() => {
-    return myQuotes[0];
-  }, [myQuotes]);
+  const latestQuote = useMemo(() => myQuotes[0], [myQuotes]);
 
   const selectedQuote = useMemo(() => {
-    if (!selectedQuoteId) return latestQuote;
-    return myQuotes.find((q) => q.id === selectedQuoteId) ?? latestQuote;
-  }, [latestQuote, myQuotes, selectedQuoteId]);
+    const quoteIdFromQuery = searchParams.get("quoteId");
+    const preferredQuoteId =
+      quoteIdFromQuery && myQuotes.some((quote) => quote.id === quoteIdFromQuery)
+        ? quoteIdFromQuery
+        : selectedQuoteId;
+    if (!preferredQuoteId) return latestQuote;
+    return myQuotes.find((q) => q.id === preferredQuoteId) ?? latestQuote;
+  }, [latestQuote, myQuotes, searchParams, selectedQuoteId]);
 
   const bookingForSelected = useMemo(() => {
     if (!selectedQuote) return undefined;
     return state.db.bookings.find((b) => b.quoteId === selectedQuote.id);
   }, [selectedQuote, state.db.bookings]);
+
+  const paymentForSelected = useMemo(() => {
+    if (!selectedQuote) return undefined;
+    return state.db.payments.find((payment) => payment.quoteId === selectedQuote.id);
+  }, [selectedQuote, state.db.payments]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -91,6 +92,14 @@ export default function QuotePage() {
     selectedQuote.status === "expired" ||
     selectedQuote.status === "declined" ||
     timeRemainingMs === 0;
+
+  const canEditSelectedQuote =
+    !!selectedQuote &&
+    !paymentForSelected &&
+    !bookingForSelected &&
+    selectedQuote.status !== "declined" &&
+    selectedQuote.status !== "expired" &&
+    timeRemainingMs > 0;
 
   const selectedQuoteHasExpiredFeedback = useMemo(() => {
     if (!activeUser || !selectedQuote) return false;
@@ -147,7 +156,7 @@ export default function QuotePage() {
 
         {!activeUser ? (
           <div className="rounded-xl border border-zinc-200 bg-white p-5 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-            You’re not logged in. Go to{" "}
+            You&apos;re not logged in. Go to{" "}
             <Link className="underline" href="/login">
               /login
             </Link>
@@ -155,168 +164,15 @@ export default function QuotePage() {
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            <form
-              className="space-y-3 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const nextErrors: QuoteFormErrors = {};
-                if (!fromAddress.trim())
-                  nextErrors.fromAddress = "Enter a pickup address.";
-                if (!toAddress.trim())
-                  nextErrors.toAddress = "Enter a drop-off address.";
-                if (!moveDateISO.trim())
-                  nextErrors.moveDateISO = "Select a move date.";
-                if (!moveTime.trim())
-                  nextErrors.moveTime = "Select a move time.";
-                if (!Number.isFinite(distanceKm) || distanceKm <= 0)
-                  nextErrors.distanceKm = "Distance must be greater than 0.";
-                if (!Number.isFinite(itemsCount) || itemsCount <= 0)
-                  nextErrors.itemsCount = "Items must be greater than 0.";
-                if (Object.keys(nextErrors).length > 0) {
-                  setFormErrors(nextErrors);
-                  return;
-                }
-                setFormErrors({});
-                dispatch({
-                  type: "quote/create",
-                  payload: {
-                    fromAddress,
-                    toAddress,
-                    moveDateISO,
-                    moveTime,
-                    distanceKm,
-                    itemsCount,
-                    hasPacking,
-                    hasStorage,
-                  },
-                });
+            <QuoteForm
+              initialValues={defaultQuoteFormValues}
+              heading="Quote form"
+              submitLabel="Create quote"
+              onSubmit={(values) => {
+                dispatch({ type: "quote/create", payload: values });
                 setSelectedQuoteId(null);
               }}
-            >
-              <div className="text-sm font-semibold">Quote form</div>
-
-              <label className="block space-y-1">
-                <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  From address
-                </div>
-                <input
-                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                  value={fromAddress}
-                  onChange={(e) => setFromAddress(e.target.value)}
-                />
-                {formErrors.fromAddress ? (
-                  <p className="text-xs text-red-600">
-                    {formErrors.fromAddress}
-                  </p>
-                ) : null}
-              </label>
-
-              <label className="block space-y-1">
-                <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  To address
-                </div>
-                <input
-                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                  value={toAddress}
-                  onChange={(e) => setToAddress(e.target.value)}
-                />
-                {formErrors.toAddress ? (
-                  <p className="text-xs text-red-600">{formErrors.toAddress}</p>
-                ) : null}
-              </label>
-
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block space-y-1">
-                  <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Move date
-                  </div>
-                  <input
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    value={moveDateISO}
-                    onChange={(e) => setMoveDateISO(e.target.value)}
-                  />
-                  {formErrors.moveDateISO ? (
-                    <p className="text-xs text-red-600">
-                      {formErrors.moveDateISO}
-                    </p>
-                  ) : null}
-                </label>
-                <label className="block space-y-1">
-                  <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Move time
-                  </div>
-                  <input
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    value={moveTime}
-                    onChange={(e) => setMoveTime(e.target.value)}
-                  />
-                  {formErrors.moveTime ? (
-                    <p className="text-xs text-red-600">
-                      {formErrors.moveTime}
-                    </p>
-                  ) : null}
-                </label>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block space-y-1">
-                  <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Distance (km)
-                  </div>
-                  <input
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    value={distanceKm}
-                    type="number"
-                    min={1}
-                    onChange={(e) => setDistanceKm(Number(e.target.value))}
-                  />
-                  {formErrors.distanceKm ? (
-                    <p className="text-xs text-red-600">
-                      {formErrors.distanceKm}
-                    </p>
-                  ) : null}
-                </label>
-                <label className="block space-y-1">
-                  <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Items count
-                  </div>
-                  <input
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    value={itemsCount}
-                    type="number"
-                    min={1}
-                    onChange={(e) => setItemsCount(Number(e.target.value))}
-                  />
-                  {formErrors.itemsCount ? (
-                    <p className="text-xs text-red-600">
-                      {formErrors.itemsCount}
-                    </p>
-                  ) : null}
-                </label>
-              </div>
-
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={hasPacking}
-                  onChange={(e) => setHasPacking(e.target.checked)}
-                />
-                Add packing service
-              </label>
-
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={hasStorage}
-                  onChange={(e) => setHasStorage(e.target.checked)}
-                />
-                Add storage
-              </label>
-
-              <button className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900">
-                Create quote
-              </button>
-            </form>
+            />
 
             <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
               <div className="flex items-center justify-between">
@@ -325,9 +181,7 @@ export default function QuotePage() {
               </div>
               <ul className="mt-3 space-y-2 text-sm">
                 {myQuotes.length === 0 ? (
-                  <li className="text-zinc-600 dark:text-zinc-400">
-                    No quotes yet.
-                  </li>
+                  <li className="text-zinc-600 dark:text-zinc-400">No quotes yet.</li>
                 ) : (
                   myQuotes.map((q) => (
                     <li
@@ -345,8 +199,8 @@ export default function QuotePage() {
                         ${(getQuoteTotalCents(q) / 100).toFixed(2)}
                       </div>
                       <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                        {getQuoteFromAddress(q)} → {getQuoteToAddress(q)} (
-                        {getQuoteDistanceKm(q)}km, {getQuoteItemsCount(q)} items)
+                        {getQuoteFromAddress(q)} → {getQuoteToAddress(q)} ({getQuoteDistanceKm(q)}
+                        km, {getQuoteItemsCount(q)} items)
                       </div>
                       <button
                         className="mt-3 text-xs font-medium text-zinc-700 underline dark:text-zinc-200"
@@ -369,12 +223,10 @@ export default function QuotePage() {
             <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950 lg:col-span-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="text-sm font-semibold">
-                    Accept quote & pay deposit (mock)
-                  </div>
+                  <div className="text-sm font-semibold">Accept quote & pay deposit (mock)</div>
                   <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                    After generating a quote, confirm it here without leaving the
-                    page.
+                    Review the quote, make changes if needed, then continue to confirmation and
+                    payment.
                   </p>
                 </div>
                 {selectedQuote ? (
@@ -384,6 +236,12 @@ export default function QuotePage() {
                 ) : null}
               </div>
 
+              {searchParams.get("edited") === "1" && selectedQuote ? (
+                <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950 dark:text-sky-100">
+                  You are reviewing your edited quote.
+                </div>
+              ) : null}
+
               {!selectedQuote ? (
                 <div className="mt-4 rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
                   Generate a quote to see the deposit and booking flow.
@@ -392,16 +250,13 @@ export default function QuotePage() {
                 <div className="mt-4 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950">
                   <div className="font-semibold">Reservation confirmed</div>
                   <div>
-                    Booking ID:{" "}
-                    <span className="font-mono">{bookingForSelected.id}</span>
+                    Booking ID: <span className="font-mono">{bookingForSelected.id}</span>
                   </div>
                   <div>
-                    Deposit paid: $
-                    {(getBookingDepositCents(bookingForSelected) / 100).toFixed(2)}
+                    Deposit paid: ${(getBookingDepositCents(bookingForSelected) / 100).toFixed(2)}
                   </div>
                   <div className="text-xs text-emerald-900/80 dark:text-emerald-100/70">
-                    We’ll hold your time slot and follow up with the operations
-                    manager.
+                    We&apos;ll hold your time slot and follow up with the operations manager.
                   </div>
                 </div>
               ) : (
@@ -414,16 +269,17 @@ export default function QuotePage() {
                       </span>
                     </div>
                     <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                      Confirm this quote to reserve your move. A refundable
-                      deposit is required.
+                      Confirm this quote to reserve your move. A refundable deposit is required.
                     </div>
+                    {canEditSelectedQuote ? (
+                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950 dark:text-amber-100">
+                        Editing may change the final price and availability.
+                      </div>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
                       <span>Mock 24h timer:</span>
-                      {selectedQuote.status === "expired" ||
-                      timeRemainingMs === 0 ? (
-                        <span className="font-semibold text-red-600">
-                          Quote expired
-                        </span>
+                      {selectedQuote.status === "expired" || timeRemainingMs === 0 ? (
+                        <span className="font-semibold text-red-600">Quote expired.</span>
                       ) : (
                         <span className="font-semibold text-zinc-900 dark:text-zinc-100">
                           {timeRemainingLabel}
@@ -433,6 +289,18 @@ export default function QuotePage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3">
+                    {canEditSelectedQuote ? (
+                      <button
+                        className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 dark:border-zinc-700 dark:text-zinc-200"
+                        type="button"
+                        onClick={() => {
+                          if (!selectedQuote) return;
+                          router.push(`/quote/edit?quoteId=${selectedQuote.id}`);
+                        }}
+                      >
+                        Edit quote
+                      </button>
+                    ) : null}
                     <button
                       className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-300 dark:bg-zinc-50 dark:text-zinc-900 dark:disabled:bg-zinc-700"
                       type="button"
@@ -465,10 +333,13 @@ export default function QuotePage() {
                       Reject quote
                     </button>
                   </div>
-                  {selectedQuote.status === "declined" ? (
+                  {!canEditSelectedQuote && selectedQuote.status !== "declined" ? (
                     <p className="text-xs text-zinc-500">
-                      You declined this quote.
+                      Quote editing is only available before payment and before the quote expires.
                     </p>
+                  ) : null}
+                  {selectedQuote.status === "declined" ? (
+                    <p className="text-xs text-zinc-500">You declined this quote.</p>
                   ) : null}
                 </div>
               )}
