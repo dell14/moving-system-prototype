@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
-import type { DayOfWeek, Shift } from "@/src/mockDb/types";
+import type { DayOfWeek, EmployeeAvailability, Shift } from "@/src/mockDb/types";
 
 const DAYS_OF_WEEK: DayOfWeek[] = [
   "Monday",
@@ -42,7 +42,7 @@ export default function SchedulePage() {
 
   // Group availabilities by employee
   const byEmployee = useMemo(() => {
-    const groups: Record<string, typeof state.db.availability> = {};
+    const groups: Record<string, EmployeeAvailability[]> = {};
     for (const a of state.db.availability) {
       if (!groups[a.employeeName]) groups[a.employeeName] = [];
       groups[a.employeeName].push(a);
@@ -74,7 +74,7 @@ export default function SchedulePage() {
           </div>
         ) : !canManage ? (
           <div className="rounded-xl border border-zinc-200 bg-white p-5 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-            You're logged in as{" "}
+            You&apos;re logged in as{" "}
             <span className="font-mono">{activeUser.email}</span> but your role
             is <span className="font-semibold">{activeUser.role}</span>. Only
             managers can access employee scheduling.

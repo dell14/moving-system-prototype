@@ -42,7 +42,7 @@ type Action =
       type: "inventory/add";
       payload: { name: string; quantity: number; unit?: string };
     }
-  | { type: "inventory/remove"; payload: { id: string } }
+  | { type: "inventory/remove"; payload: { id: string; quantity: number } }
   | {
       type: "availability/add";
       payload: {
@@ -137,7 +137,7 @@ function reducer(state: AppState, action: Action): AppState {
     }
 
     case "inventory/remove": {
-      removeInventoryItem(db, action.payload.id);
+      removeInventoryItem(db, action.payload.id, action.payload.quantity);
       return { db: { ...db } };
     }
 

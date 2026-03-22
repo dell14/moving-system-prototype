@@ -77,6 +77,28 @@ function createSystemId(prefix: string) {
   return `${prefix}_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function sanitizeInventoryQuantity(quantity: number): number {
+  if (!Number.isFinite(quantity)) return 0;
+  return Math.max(0, Math.trunc(quantity));
+}
+
+function normalizeInventoryName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function normalizeInventoryUnit(unit?: string): string {
+  return unit?.trim().toLowerCase() ?? "";
+}
+
+function recordInventoryManagement(db: MockDb): void {
+  const activeUser = findActiveUser(db);
+  if (!activeUser) return;
+  const userModel = toDomainUser(activeUser);
+  if (userModel instanceof OperationsManager) {
+    userModel.manageInventory();
+  }
+}
+
 function createNotification(
   db: MockDb,
   input: {
@@ -221,38 +243,72 @@ export function addInventoryItem(
   input: { name: string; quantity: number; unit?: string },
   idFactory: IdFactory,
 ): void {
+  const name = input.name.trim();
+  const quantity = sanitizeInventoryQuantity(input.quantity);
+  const unit = input.unit?.trim() || undefined;
+  if (!name || quantity <= 0) return;
+
+  const existingItem = db.inventory.find(
+    (item) =>
+      normalizeInventoryName(item.itemType || item.name) === normalizeInventoryName(name) &&
+      normalizeInventoryUnit(item.unit) === normalizeInventoryUnit(unit),
+  );
+
+  if (existingItem) {
+    const itemModel = toDomainInventoryItem(existingItem);
+    itemModel.addItem(quantity);
+    itemModel.saveChanges();
+    recordInventoryManagement(db);
+    db.inventory = db.inventory.map((item) =>
+      item.id === existingItem.id
+        ? toDbInventoryItem(itemModel, {
+            ...existingItem,
+            unit: unit ?? existingItem.unit,
+          })
+        : item,
+    );
+    return;
+  }
+
   const inventoryId = idFactory("inv");
   const itemTemplate = {
     id: inventoryId,
     itemId: parseNumericId(inventoryId),
-    itemType: input.name,
-    name: input.name,
-    quantity: input.quantity,
+    itemType: name,
+    name,
+    quantity,
     itemCost: 0,
-    unit: input.unit,
+    unit,
   };
   const itemModel = toDomainInventoryItem(itemTemplate);
   itemModel.saveChanges();
-
-  const activeUser = findActiveUser(db);
-  if (activeUser) {
-    const userModel = toDomainUser(activeUser);
-    if (userModel instanceof OperationsManager) {
-      userModel.manageInventory();
-    }
-  }
+  recordInventoryManagement(db);
 
   db.inventory = [toDbInventoryItem(itemModel, itemTemplate), ...db.inventory];
 }
 
-export function removeInventoryItem(db: MockDb, inventoryId: string): void {
+export function removeInventoryItem(
+  db: MockDb,
+  inventoryId: string,
+  quantity = 1,
+): void {
   const target = db.inventory.find((item) => item.id === inventoryId);
-  if (target) {
-    const itemModel = toDomainInventoryItem(target);
-    itemModel.removeItem(target.quantity);
-    itemModel.saveChanges();
+  const amount = sanitizeInventoryQuantity(quantity);
+  if (!target || amount <= 0) return;
+
+  const itemModel = toDomainInventoryItem(target);
+  itemModel.removeItem(amount);
+  itemModel.saveChanges();
+  recordInventoryManagement(db);
+
+  if (itemModel.quantity <= 0) {
+    db.inventory = db.inventory.filter((item) => item.id !== inventoryId);
+    return;
   }
-  db.inventory = db.inventory.filter((item) => item.id !== inventoryId);
+
+  db.inventory = db.inventory.map((item) =>
+    item.id === inventoryId ? toDbInventoryItem(itemModel, target) : item,
+  );
 }
 
 export function addAvailability(

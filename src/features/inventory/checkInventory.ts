@@ -13,9 +13,11 @@ export function checkInventory(inventory: InventoryItem[]): {
   message: string;
 } {
   const inventoryModels = inventory.map((item) => toDomainInventoryItem(item));
-  const byName = Object.fromEntries(
-    inventoryModels.map((item) => [item.itemType.toLowerCase(), item.quantity]),
-  );
+  const byName = inventoryModels.reduce<Record<string, number>>((totals, item) => {
+    const key = item.itemType.toLowerCase();
+    totals[key] = (totals[key] ?? 0) + item.quantity;
+    return totals;
+  }, {});
 
   const low: string[] = [];
 
