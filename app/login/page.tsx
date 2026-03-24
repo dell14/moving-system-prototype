@@ -82,7 +82,7 @@ export default function LoginPage() {
               }}
             >
               {showRegisteredMessage ? (
-                <p className="text-sm text-emerald-700 dark:text-emerald-400">
+                <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950 dark:text-emerald-100">
                   Account created. You can log in now.
                 </p>
               ) : null}
@@ -110,7 +110,11 @@ export default function LoginPage() {
                 />
               </label>
 
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+              {error ? (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950 dark:text-red-200">
+                  {error}
+                </p>
+              ) : null}
 
               <button className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900">
                 Log in

@@ -87,6 +87,7 @@ export default function EditQuotePage() {
         </header>
 
         <QuoteForm
+          key={quote.id}
           initialValues={quote.input}
           heading="Quote form"
           submitLabel="Save quote changes"

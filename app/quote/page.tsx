@@ -165,6 +165,7 @@ export default function QuotePage() {
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             <QuoteForm
+              key="create-quote-form"
               initialValues={defaultQuoteFormValues}
               heading="Quote form"
               submitLabel="Create quote"

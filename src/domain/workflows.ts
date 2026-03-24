@@ -186,7 +186,9 @@ export function loginUser(db: MockDb, email: string, password: string): boolean 
 export function registerUser(
   db: MockDb,
   input: {
-    name: string;
+    firstName: string;
+    lastName: string;
+    phoneNumber: string;
     email: string;
     password: string;
     role: "customer" | "manager";
@@ -200,9 +202,13 @@ export function registerUser(
 
   const newUserId = idFactory("user");
   const normalizedEmail = input.email.trim();
-  const [rawFirstName, ...remaining] = input.name.trim().split(/\s+/);
-  const firstName = rawFirstName || "New";
-  const lastName = remaining.join(" ") || "User";
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
+  const fullName = `${firstName} ${lastName}`.trim();
+  const normalizedPhoneNumber = Number.parseInt(
+    input.phoneNumber.replace(/\D+/g, "").slice(0, 15),
+    10,
+  );
   const userRecord = {
     id: newUserId,
     userId: parseNumericId(newUserId),
@@ -213,9 +219,9 @@ export function registerUser(
     firstName,
     lastName,
     email: normalizedEmail,
-    phoneNumber: 0,
+    phoneNumber: Number.isFinite(normalizedPhoneNumber) ? normalizedPhoneNumber : 0,
     password: input.password,
-    name: input.name,
+    name: fullName,
     role: input.role,
     preferredNotificationChannel: input.role === "customer" ? "email" : undefined,
     numberOfServiceRequests: input.role === "customer" ? 0 : undefined,

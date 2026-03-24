@@ -8,9 +8,6 @@ export default function Home() {
           <h1 className="text-3xl font-semibold tracking-tight">
             SpeedShift (Mock)
           </h1>
-          <p className="text-zinc-600 dark:text-zinc-400">
-            Front-end only prototype (no APIs). Implementing UC-01..UC-06 first.
-          </p>
         </header>
 
         <section className="grid gap-4 sm:grid-cols-2">

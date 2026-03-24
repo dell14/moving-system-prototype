@@ -138,7 +138,7 @@ export default function FeedbackPage() {
         </header>
 
         {!activeUser ? (
-          <div className="rounded-xl border border-zinc-200 bg-white p-5 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="rounded-xl border border-sky-200 bg-sky-50 p-5 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950 dark:text-sky-100">
             You are not logged in. Go to{" "}
             <Link className="underline" href="/login">
               /login

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { QuoteFormErrors } from "@/src/features/quotes/form";
 import { validateQuoteInput } from "@/src/features/quotes/form";
 import type { QuoteFormState } from "@/src/features/quotes/types";
+import { useUnsavedChangesWarning } from "@/src/hooks/useUnsavedChangesWarning";
 
 type QuoteFormProps = {
   initialValues: QuoteFormState;
@@ -26,6 +27,25 @@ export function QuoteForm({
 }: QuoteFormProps) {
   const [values, setValues] = useState<QuoteFormState>(initialValues);
   const [errors, setErrors] = useState<QuoteFormErrors>({});
+  const [savedValues, setSavedValues] = useState<QuoteFormState>(initialValues);
+
+  const hasUnsavedChanges = useMemo(
+    () =>
+      values.fromAddress !== savedValues.fromAddress ||
+      values.toAddress !== savedValues.toAddress ||
+      values.moveDateISO !== savedValues.moveDateISO ||
+      values.moveTime !== savedValues.moveTime ||
+      values.distanceKm !== savedValues.distanceKm ||
+      values.itemsCount !== savedValues.itemsCount ||
+      values.hasPacking !== savedValues.hasPacking ||
+      values.hasStorage !== savedValues.hasStorage,
+    [savedValues, values],
+  );
+
+  useUnsavedChangesWarning({
+    isEnabled: hasUnsavedChanges,
+    message: "Are you sure you want to leave? Your quote details will be lost.",
+  });
 
   function updateField<K extends keyof QuoteFormState>(key: K, value: QuoteFormState[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -42,6 +62,7 @@ export function QuoteForm({
           return;
         }
         setErrors({});
+        setSavedValues(values);
         onSubmit(values);
       }}
     >

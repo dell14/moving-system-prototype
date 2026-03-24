@@ -75,7 +75,7 @@ export default function QuoteOutcomeFeedbackPage() {
           <Link className="text-sm underline" href="/login">
             {"<-"} Go to login
           </Link>
-          <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="rounded-xl border border-sky-200 bg-sky-50 p-6 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950 dark:text-sky-100">
             You are not logged in.
           </div>
         </main>
@@ -90,7 +90,7 @@ export default function QuoteOutcomeFeedbackPage() {
           <Link className="text-sm underline" href="/quote">
             {"<-"} Back to quote
           </Link>
-          <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950 dark:text-red-200">
             We could not find that quote feedback request.
           </div>
         </main>
@@ -105,7 +105,7 @@ export default function QuoteOutcomeFeedbackPage() {
           <Link className="text-sm underline" href={returnTo}>
             {"<-"} Back
           </Link>
-          <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950 dark:text-red-200">
             This quote is not in the expected state for this feedback form.
           </div>
         </main>

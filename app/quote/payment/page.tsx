@@ -12,6 +12,7 @@ import {
   getQuoteToAddress,
   getQuoteTotalCents,
 } from "@/src/domain/viewAdapters";
+import { useUnsavedChangesWarning } from "@/src/hooks/useUnsavedChangesWarning";
 
 type PaymentErrors = {
   amount?: string;
@@ -63,6 +64,14 @@ export default function QuotePaymentPage() {
 
   const isExpired = quote ? getQuoteExpiresAtMs(quote) <= nowMs : false;
   const isDeclined = quote?.status === "declined";
+  const hasUnsavedChanges =
+    !booking &&
+    [amount, name, cardNumber, expiry, cvc, zip].some((value) => value.trim().length > 0);
+
+  useUnsavedChangesWarning({
+    isEnabled: hasUnsavedChanges,
+    message: "Are you sure you want to leave? Your payment form details will be lost.",
+  });
 
   useEffect(() => {
     if (!activeUser || !quote || !quoteId || booking) return;
