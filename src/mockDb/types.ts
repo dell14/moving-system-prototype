@@ -89,6 +89,8 @@ export interface Booking {
   status: "confirmed";
   depositCents: number;
   scheduledSlotId: Id;
+  assignedEmployeeNames?: string[];
+  schedulingNote?: string;
 }
 
 export interface Payment {
@@ -124,7 +126,13 @@ export interface Feedback {
 
 export interface NotificationRecord {
   id: Id;
-  type: "quote_expiring_soon" | "quote_expired" | "no_timeslots_available" | "booking_confirmation";
+  type:
+    | "quote_generated"
+    | "quote_expiring_soon"
+    | "quote_expired"
+    | "no_timeslots_available"
+    | "booking_confirmation"
+    | "service_reminder";
   title: string;
   serviceId: number;
   channel: string;

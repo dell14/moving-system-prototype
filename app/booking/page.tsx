@@ -146,6 +146,11 @@ export default function BookingPage() {
                       <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
                         Deposit: ${(getBookingDepositCents(b) / 100).toFixed(2)}
                       </div>
+                      {b.assignedEmployeeNames?.length ? (
+                        <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                          Crew: {b.assignedEmployeeNames.join(", ")}
+                        </div>
+                      ) : null}
                     </li>
                   ))
                 )}

@@ -17,6 +17,7 @@ import {
   rejectQuote,
   removeAvailability,
   removeInventoryItem,
+  resetUserPassword,
   submitFeedback,
   updateQuote,
 } from "@/src/domain/workflows";
@@ -38,6 +39,10 @@ type Action =
         password: string;
         role: "customer" | "manager";
       };
+    }
+  | {
+      type: "auth/resetPassword";
+      payload: { email: string; newPassword: string };
     }
   | { type: "auth/logout" }
   | {
@@ -130,6 +135,16 @@ function reducer(state: AppState, action: Action): AppState {
 
     case "auth/logout": {
       logoutUser(db);
+      return { db: { ...db } };
+    }
+
+    case "auth/resetPassword": {
+      const didReset = resetUserPassword(
+        db,
+        action.payload.email,
+        action.payload.newPassword,
+      );
+      if (!didReset) return state;
       return { db: { ...db } };
     }
 

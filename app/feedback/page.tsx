@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { OperationsManager } from "@/src/classes";
+import { toDomainUser } from "@/src/mappers";
+import { createFeedbackRepository } from "@/src/repositories/FeedbackRepository";
 import { useAppStore } from "@/src/state/AppStore";
 import type { Quote } from "@/src/mockDb/types";
 import {
@@ -43,6 +46,10 @@ export default function FeedbackPage() {
   const activeUser = useMemo(
     () => state.db.users.find((u) => u.id === state.db.activeUserId),
     [state.db.activeUserId, state.db.users],
+  );
+  const usersById = useMemo(
+    () => new Map(state.db.users.map((user) => [user.id, user] as const)),
+    [state.db.users],
   );
 
   const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5>(5);
@@ -123,6 +130,16 @@ export default function FeedbackPage() {
     );
   }, [activeUser, state.db.quotes]);
 
+  const managerReviewedFeedback = useMemo(() => {
+    if (!activeUser || activeUser.role !== "manager") return [];
+    const managerModel = toDomainUser(activeUser);
+    if (!(managerModel instanceof OperationsManager)) return [];
+    const feedbackRepository = createFeedbackRepository(state.db);
+    return managerModel.reviewFeedback(feedbackRepository, {
+      sortBy: "newest",
+    });
+  }, [activeUser, state.db]);
+
   return (
     <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
       <main className="mx-auto w-full max-w-3xl space-y-6">
@@ -144,6 +161,53 @@ export default function FeedbackPage() {
               /login
             </Link>{" "}
             to rate a completed move.
+          </div>
+        ) : activeUser.role === "manager" ? (
+          <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">Manager review</div>
+              <div className="text-xs text-zinc-500">
+                {managerReviewedFeedback.length} feedback records
+              </div>
+            </div>
+            <ul className="mt-3 space-y-2 text-sm">
+              {managerReviewedFeedback.length === 0 ? (
+                <li className="text-zinc-600 dark:text-zinc-400">
+                  No feedback has been submitted yet.
+                </li>
+              ) : (
+                managerReviewedFeedback.map((feedback) => {
+                  const author = feedback.userId
+                    ? usersById.get(feedback.userId)
+                    : undefined;
+                  return (
+                    <li
+                      key={feedback.id}
+                      className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs">
+                          {formatContextLabel(feedback.context)}
+                        </span>
+                        <span className="text-xs">
+                          {feedback.rating ? `${feedback.rating}/5` : "-"}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                        {author ? `${author.firstName} ${author.lastName}`.trim() : "Unknown user"}
+                        {author ? ` (${author.email})` : ""}
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                        {new Date(getFeedbackSubmittedAtMs(feedback)).toLocaleString()}
+                      </div>
+                      <div className="mt-2 whitespace-pre-wrap">
+                        {getFeedbackMessage(feedback)}
+                      </div>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
           </div>
         ) : (
           <>

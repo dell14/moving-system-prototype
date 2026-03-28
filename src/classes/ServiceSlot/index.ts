@@ -1,0 +1,1 @@
+export { ServiceSlot } from "./ServiceSlot";

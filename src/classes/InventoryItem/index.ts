@@ -1,0 +1,1 @@
+export { InventoryItem } from "./InventoryItem";

@@ -240,6 +240,13 @@ function migrateDb(rawDb: unknown): MockDb {
       status: "confirmed" as const,
       depositCents,
       scheduledSlotId: asString(booking.scheduledSlotId, `slot_${Date.now()}`),
+      assignedEmployeeNames: asArray(booking.assignedEmployeeNames)
+        .map((name) => asString(name))
+        .filter(Boolean),
+      schedulingNote:
+        booking.schedulingNote === undefined
+          ? undefined
+          : asString(booking.schedulingNote),
     };
   });
 
@@ -339,11 +346,19 @@ function migrateDb(rawDb: unknown): MockDb {
   const notifications = asArray(record.notifications).map((value) => {
     const note = asRecord(value);
     const typeRaw = asString(note.type, "booking_confirmation");
-    const type: "quote_expiring_soon" | "quote_expired" | "no_timeslots_available" | "booking_confirmation" =
+    const type:
+      | "quote_generated"
+      | "quote_expiring_soon"
+      | "quote_expired"
+      | "no_timeslots_available"
+      | "booking_confirmation"
+      | "service_reminder" =
+      typeRaw === "quote_generated" ||
       typeRaw === "quote_expiring_soon" ||
       typeRaw === "quote_expired" ||
       typeRaw === "no_timeslots_available" ||
-      typeRaw === "booking_confirmation"
+      typeRaw === "booking_confirmation" ||
+      typeRaw === "service_reminder"
         ? typeRaw
         : "booking_confirmation";
     const createdAtMs = asNumber(note.createdAtMs, asNumber(note.scheduledForMs, Date.now()));

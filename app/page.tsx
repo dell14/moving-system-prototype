@@ -50,6 +50,11 @@ export default function Home() {
                   Check inventory
                 </Link>
               </li>
+              <li>
+                <Link className="underline" href="/feedback">
+                  Review feedback
+                </Link>
+              </li>
             </ul>
           </div>
         </section>

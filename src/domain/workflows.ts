@@ -1,23 +1,34 @@
-import type { MockDb, QuoteInput } from "@/src/mockDb/types";
 import {
   Client,
+  InventoryItem,
   NotificationService,
   OperationsManager,
+  Quote,
+} from "@/src/classes";
+import {
+  addHoursToTime,
+  getDayOfWeek,
+  parseNumericId,
+  parseTimeToMinutes,
+  shiftToWindow,
+  uniqueNonEmpty,
+} from "@/src/classes/shared/utils";
+import type { MockDb, QuoteInput } from "@/src/mockDb/types";
+import {
   toDbBooking,
-  toDbFeedback,
-  toDbInventoryItem,
   toDbPayment,
   toDbQuote,
   toDbServiceSlot,
   toDbUser,
-  toDomainBooking,
   toDomainFeedback,
   toDomainInventoryItem,
-  toDomainPayment,
   toDomainQuote,
   toDomainServiceSlot,
   toDomainUser,
-} from "@/src/domain/classes";
+} from "@/src/mappers";
+import { createFeedbackRepository } from "@/src/repositories/FeedbackRepository";
+import { createInventoryRepository } from "@/src/repositories/InventoryRepository";
+import { createNotificationRepository } from "@/src/repositories/NotificationRepository";
 
 type IdFactory = (prefix: string) => string;
 
@@ -28,41 +39,7 @@ const QUOTE_EXPIRING_SOON_WINDOW_MS = (() => {
   if (Number.isFinite(envValue) && envValue > 0) return envValue;
   return DEFAULT_QUOTE_EXPIRING_SOON_WINDOW_MS;
 })();
-
-function parseNumericId(rawId: string): number {
-  const digits = rawId.replace(/\D+/g, "");
-  if (!digits) return 0;
-  const parsed = Number.parseInt(digits.slice(0, 9), 10);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-export function calculateQuoteTotalCents(input: {
-  distanceKm: number;
-  itemsCount: number;
-  hasPacking: boolean;
-  hasStorage: boolean;
-}): number {
-  const base = 7500; // $75 base
-  const perKm = Math.round(input.distanceKm * 150); // $1.50/km
-  const perItem = input.itemsCount * 200; // $2/item
-  const packing = input.hasPacking ? 5000 : 0; // $50
-  const storage = input.hasStorage ? 2500 : 0; // $25
-  return base + perKm + perItem + packing + storage;
-}
-
-function addHoursToTime(time: string, hours: number): string {
-  const [hourRaw, minuteRaw] = time.split(":");
-  const hour = Number.parseInt(hourRaw ?? "", 10);
-  const minute = Number.parseInt(minuteRaw ?? "", 10);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return time;
-  const totalMinutes = hour * 60 + minute + hours * 60;
-  const normalized = ((totalMinutes % (24 * 60)) + 24 * 60) % (24 * 60);
-  const nextHour = Math.floor(normalized / 60)
-    .toString()
-    .padStart(2, "0");
-  const nextMinute = (normalized % 60).toString().padStart(2, "0");
-  return `${nextHour}:${nextMinute}`;
-}
+const DEFAULT_REQUIRED_DEPOSIT_CENTS = 5000;
 
 function findActiveUser(db: MockDb) {
   if (!db.activeUserId) return undefined;
@@ -73,113 +50,95 @@ function getManagerUsers(db: MockDb) {
   return db.users.filter((user) => user.role === "manager" || user.role === "owner");
 }
 
-function createSystemId(prefix: string) {
-  return `${prefix}_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 10)}`;
-}
-
 function sanitizeInventoryQuantity(quantity: number): number {
   if (!Number.isFinite(quantity)) return 0;
   return Math.max(0, Math.trunc(quantity));
 }
 
-function normalizeInventoryName(name: string): string {
-  return name.trim().toLowerCase();
+function createDomainNotificationService(
+  db: MockDb,
+  idFactory: IdFactory | undefined,
+  nowMs: number,
+  channel = "in_app",
+) {
+  return new NotificationService(
+    nowMs,
+    channel,
+    createNotificationRepository(db, idFactory),
+  );
 }
 
-function normalizeInventoryUnit(unit?: string): string {
-  return unit?.trim().toLowerCase() ?? "";
+function availabilityMatchesWindow(
+  shift: "morning" | "evening" | "all_day",
+  startTime: string,
+  endTime: string,
+): boolean {
+  const shiftWindow = shiftToWindow(shift);
+  const start = parseTimeToMinutes(startTime);
+  const end = parseTimeToMinutes(endTime);
+  const shiftStart = parseTimeToMinutes(shiftWindow.startTime);
+  const shiftEnd = parseTimeToMinutes(shiftWindow.endTime);
+  if (start < 0 || end < 0 || shiftStart < 0 || shiftEnd < 0) return false;
+  return shiftStart <= start && shiftEnd >= end;
 }
 
-function recordInventoryManagement(db: MockDb): void {
-  const activeUser = findActiveUser(db);
-  if (!activeUser) return;
-  const userModel = toDomainUser(activeUser);
-  if (userModel instanceof OperationsManager) {
-    userModel.manageInventory();
-  }
-}
-
-function createNotification(
+function collectEmployeeNamesForSlot(
   db: MockDb,
   input: {
-    idFactory?: IdFactory;
-    type: "quote_expiring_soon" | "quote_expired" | "no_timeslots_available" | "booking_confirmation";
-    title: string;
-    message: string;
-    nowMs: number;
-    recipientUserId?: string;
-    recipientRole?: "customer" | "manager" | "owner";
-    relatedUserId?: string;
-    relatedQuoteId?: string;
-    relatedBookingId?: string;
+    moveDateISO: string;
+    startTime: string;
+    endTime: string;
+    availabilityId?: number;
   },
-): void {
-  const duplicate = db.notifications.some((note) => {
-    const sameRecipient =
-      (input.recipientUserId ? note.recipientUserId === input.recipientUserId : true) &&
-      (input.recipientRole ? note.recipientRole === input.recipientRole : true);
-    return (
-      note.type === input.type &&
-      sameRecipient &&
-      note.relatedQuoteId === input.relatedQuoteId &&
-      note.relatedBookingId === input.relatedBookingId
-    );
-  });
-  if (duplicate) return;
+): string[] {
+  const dayOfWeek = getDayOfWeek(input.moveDateISO);
+  const directMatch = input.availabilityId
+    ? db.availability.find(
+        (availability) => parseNumericId(availability.id) === input.availabilityId,
+      )
+    : undefined;
 
-  const notificationId = input.idFactory?.("ntf") ?? createSystemId("ntf");
-  db.notifications = [
-    {
-      id: notificationId,
-      type: input.type,
-      title: input.title,
-      serviceId: input.nowMs,
-      channel: "in_app",
-      message: input.message,
-      status: "sent",
-      createdAtMs: input.nowMs,
-      scheduledForMs: input.nowMs,
-      sentAtMs: input.nowMs,
-      readAtMs: undefined,
-      recipientRole: input.recipientRole,
-      recipientUserId: input.recipientUserId,
-      relatedUserId: input.relatedUserId,
-      relatedQuoteId: input.relatedQuoteId,
-      relatedBookingId: input.relatedBookingId,
-    },
-    ...db.notifications,
-  ];
+  const matchingEmployees = db.availability
+    .filter(
+      (availability) =>
+        availability.dayOfWeek === dayOfWeek &&
+        availabilityMatchesWindow(
+          availability.shift,
+          input.startTime,
+          input.endTime,
+        ),
+    )
+    .map((availability) => availability.employeeName);
+
+  return uniqueNonEmpty([
+    ...(directMatch ? [directMatch.employeeName] : []),
+    ...matchingEmployees,
+  ]);
 }
 
-function getDayOfWeek(dateISO: string): string {
-  const date = new Date(`${dateISO}T00:00:00`);
-  const labels = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-  ] as const;
-  return labels[date.getDay()] ?? "Monday";
+function buildServiceReminderDate(moveDateISO: string, moveTime: string): Date | undefined {
+  const moveStart = new Date(`${moveDateISO}T${moveTime || "10:00"}:00`);
+  if (!Number.isFinite(moveStart.getTime())) return undefined;
+  return new Date(moveStart.getTime() - 2 * 60 * 60 * 1000);
 }
 
-function shiftToWindow(shift: "morning" | "evening" | "all_day"): {
-  startTime: string;
-  endTime: string;
-} {
-  if (shift === "morning") return { startTime: "08:00", endTime: "12:00" };
-  if (shift === "evening") return { startTime: "13:00", endTime: "17:00" };
-  return { startTime: "09:00", endTime: "17:00" };
+export function calculateQuoteTotalCents(input: {
+  distanceKm: number;
+  itemsCount: number;
+  hasPacking: boolean;
+  hasStorage: boolean;
+}): number {
+  return Quote.estimateTotalCents(input);
 }
 
 export function loginUser(db: MockDb, email: string, password: string): boolean {
-  const user = db.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-  if (!user) return false;
-  const userModel = toDomainUser(user);
+  const userRecord = db.users.find(
+    (user) => user.email.toLowerCase() === email.toLowerCase(),
+  );
+  if (!userRecord) return false;
+  const userModel = toDomainUser(userRecord);
   if (!userModel.login(password)) return false;
-  db.activeUserId = user.id;
+  db.activeUserId = userRecord.id;
   return true;
 }
 
@@ -209,6 +168,7 @@ export function registerUser(
     input.phoneNumber.replace(/\D+/g, "").slice(0, 15),
     10,
   );
+
   const userRecord = {
     id: newUserId,
     userId: parseNumericId(newUserId),
@@ -228,6 +188,7 @@ export function registerUser(
     managerPermissions: input.role === "manager" ? true : undefined,
     salary: input.role === "manager" ? 0 : undefined,
   };
+
   const userModel = toDomainUser(userRecord);
   userModel.activate();
   db.users = [toDbUser(userModel, userRecord), ...db.users];
@@ -244,6 +205,23 @@ export function logoutUser(db: MockDb): void {
   db.activeUserId = undefined;
 }
 
+export function resetUserPassword(
+  db: MockDb,
+  email: string,
+  newPassword: string,
+): boolean {
+  const targetUser = db.users.find(
+    (user) => user.email.toLowerCase() === email.trim().toLowerCase(),
+  );
+  if (!targetUser) return false;
+  const userModel = toDomainUser(targetUser);
+  if (!userModel.resetPassword(newPassword)) return false;
+  db.users = db.users.map((user) =>
+    user.id === targetUser.id ? toDbUser(userModel, targetUser) : user,
+  );
+  return true;
+}
+
 export function addInventoryItem(
   db: MockDb,
   input: { name: string; quantity: number; unit?: string },
@@ -254,43 +232,35 @@ export function addInventoryItem(
   const unit = input.unit?.trim() || undefined;
   if (!name || quantity <= 0) return;
 
-  const existingItem = db.inventory.find(
-    (item) =>
-      normalizeInventoryName(item.itemType || item.name) === normalizeInventoryName(name) &&
-      normalizeInventoryUnit(item.unit) === normalizeInventoryUnit(unit),
-  );
+  const activeUser = findActiveUser(db);
+  const userModel = activeUser ? toDomainUser(activeUser) : undefined;
+  const inventoryRepository = createInventoryRepository(db, idFactory);
+  const existingItem = inventoryRepository.findByNameAndUnit(name, unit);
 
-  if (existingItem) {
-    const itemModel = toDomainInventoryItem(existingItem);
-    itemModel.addItem(quantity);
-    itemModel.saveChanges();
-    recordInventoryManagement(db);
-    db.inventory = db.inventory.map((item) =>
-      item.id === existingItem.id
-        ? toDbInventoryItem(itemModel, {
-            ...existingItem,
-            unit: unit ?? existingItem.unit,
-          })
-        : item,
-    );
+  const itemModel = existingItem
+    ? toDomainInventoryItem(existingItem)
+    : new InventoryItem({
+        recordId: idFactory("inv"),
+        itemId: 0,
+        itemType: name,
+        quantity: 0,
+        itemCost: 0,
+        unit,
+      });
+
+  if (userModel instanceof OperationsManager) {
+    userModel.manageInventory({
+      action: "add",
+      item: itemModel,
+      amount: quantity,
+      repository: inventoryRepository,
+      minimumQuantity: 1,
+    });
     return;
   }
 
-  const inventoryId = idFactory("inv");
-  const itemTemplate = {
-    id: inventoryId,
-    itemId: parseNumericId(inventoryId),
-    itemType: name,
-    name,
-    quantity,
-    itemCost: 0,
-    unit,
-  };
-  const itemModel = toDomainInventoryItem(itemTemplate);
-  itemModel.saveChanges();
-  recordInventoryManagement(db);
-
-  db.inventory = [toDbInventoryItem(itemModel, itemTemplate), ...db.inventory];
+  itemModel.addItem(quantity);
+  itemModel.saveChanges(inventoryRepository);
 }
 
 export function removeInventoryItem(
@@ -298,23 +268,33 @@ export function removeInventoryItem(
   inventoryId: string,
   quantity = 1,
 ): void {
-  const target = db.inventory.find((item) => item.id === inventoryId);
   const amount = sanitizeInventoryQuantity(quantity);
-  if (!target || amount <= 0) return;
+  if (amount <= 0) return;
 
+  const target = db.inventory.find((item) => item.id === inventoryId);
+  if (!target) return;
+
+  const activeUser = findActiveUser(db);
+  const userModel = activeUser ? toDomainUser(activeUser) : undefined;
+  const inventoryRepository = createInventoryRepository(db);
   const itemModel = toDomainInventoryItem(target);
-  itemModel.removeItem(amount);
-  itemModel.saveChanges();
-  recordInventoryManagement(db);
 
-  if (itemModel.quantity <= 0) {
-    db.inventory = db.inventory.filter((item) => item.id !== inventoryId);
-    return;
+  if (userModel instanceof OperationsManager) {
+    userModel.manageInventory({
+      action: "remove",
+      item: itemModel,
+      amount,
+      repository: inventoryRepository,
+      minimumQuantity: 1,
+    });
+  } else {
+    itemModel.removeItem(amount);
+    itemModel.saveChanges(inventoryRepository);
   }
 
-  db.inventory = db.inventory.map((item) =>
-    item.id === inventoryId ? toDbInventoryItem(itemModel, target) : item,
-  );
+  if (itemModel.quantity <= 0 && itemModel.recordId) {
+    inventoryRepository.remove(itemModel.recordId);
+  }
 }
 
 export function addAvailability(
@@ -326,14 +306,6 @@ export function addAvailability(
   },
   idFactory: IdFactory,
 ): void {
-  const activeUser = findActiveUser(db);
-  if (activeUser) {
-    const userModel = toDomainUser(activeUser);
-    if (userModel instanceof OperationsManager) {
-      userModel.scheduleEmployees();
-    }
-  }
-
   db.availability = [{ id: idFactory("av"), ...input }, ...db.availability];
 }
 
@@ -349,7 +321,47 @@ export function createQuote(
 ): boolean {
   const activeUser = findActiveUser(db);
   if (!activeUser) return false;
+
   const quoteId = idFactory("q");
+  const userModel = toDomainUser(activeUser);
+  const notificationService = createDomainNotificationService(
+    db,
+    idFactory,
+    nowMs,
+    activeUser.preferredNotificationChannel ?? "in_app",
+  );
+  const totalCents = calculateQuoteTotalCents(input);
+  const expirationDateTime = new Date(nowMs + QUOTE_EXPIRY_WINDOW_MS);
+  let quoteModel: Quote;
+
+  try {
+    if (userModel instanceof Client) {
+      quoteModel = userModel.requestQuote(input, {
+        quoteId: parseNumericId(quoteId),
+        recordId: quoteId,
+        userRecordId: activeUser.id,
+        requestedAt: new Date(nowMs),
+        expirationDateTime,
+        totalCents,
+      });
+      db.users = db.users.map((userRecord) =>
+        userRecord.id === activeUser.id ? toDbUser(userModel, userRecord) : userRecord,
+      );
+    } else {
+      quoteModel = Quote.createFromRequest({
+        recordId: quoteId,
+        quoteId: parseNumericId(quoteId),
+        userId: activeUser.id,
+        requestedAt: new Date(nowMs),
+        expirationDateTime,
+        quoteInput: input,
+        totalCents,
+      });
+      quoteModel.generate();
+    }
+  } catch {
+    return false;
+  }
 
   const quoteTemplate = {
     id: quoteId,
@@ -357,36 +369,55 @@ export function createQuote(
     requestedDateTimeISO: new Date(nowMs).toISOString(),
     startAddress: input.fromAddress,
     endAddress: input.toAddress,
-    distance: `${input.distanceKm}km`,
-    apartmentSize: `${input.itemsCount} items`,
-    qtyResidents: Math.max(1, Math.ceil(input.itemsCount / 15)),
-    serviceOption: input.hasPacking || input.hasStorage
-      ? [input.hasPacking ? "packing" : "", input.hasStorage ? "storage" : ""]
-          .filter(Boolean)
-          .join("+")
-      : "move_only",
-    expirationDateTimeISO: new Date(nowMs + QUOTE_EXPIRY_WINDOW_MS).toISOString(),
-    totalCost: calculateQuoteTotalCents(input) / 100,
+    distance: quoteModel.distanceLabel,
+    apartmentSize: quoteModel.apartmentSizeLabel,
+    qtyResidents: quoteModel.qtyResidents,
+    serviceOption: quoteModel.serviceOption,
+    expirationDateTimeISO: quoteModel.expirationDateTime.toISOString(),
+    totalCost: quoteModel.totalCost,
     userId: activeUser.id,
     createdAtMs: nowMs,
-    expiresAtMs: nowMs + QUOTE_EXPIRY_WINDOW_MS,
+    expiresAtMs: quoteModel.expirationDateTime.getTime(),
     input,
-    totalCents: calculateQuoteTotalCents(input),
-    status: "active" as const,
-  };
-  const quoteModel = toDomainQuote(quoteTemplate);
-  const userModel = toDomainUser(activeUser);
-
-  if (userModel instanceof Client) {
-    userModel.requestQuote(quoteModel);
-    db.users = db.users.map((userRecord) =>
-      userRecord.id === activeUser.id ? toDbUser(userModel, userRecord) : userRecord,
-    );
-  } else {
-    quoteModel.generate();
-  }
+    totalCents,
+    status: quoteModel.status,
+  } satisfies MockDb["quotes"][number];
 
   db.quotes = [toDbQuote(quoteModel, quoteTemplate), ...db.quotes];
+
+  notificationService.sendNotification(
+    {
+      type: "quote_generated",
+      title: "Quote generated",
+      message: `Your quote from ${quoteModel.startAddress} to ${quoteModel.endAddress} is ready.`,
+      recipientUserId: activeUser.id,
+      recipientRole: "customer",
+      relatedUserId: activeUser.id,
+      relatedQuoteId: quoteId,
+    },
+    new Date(nowMs),
+  );
+
+  notificationService.scheduleNotification(
+    {
+      type: "quote_expiring_soon",
+      title: "Quote expiring soon",
+      message: "Your quote will expire soon if it is not booked.",
+      recipientUserId: activeUser.id,
+      recipientRole: "customer",
+      relatedUserId: activeUser.id,
+      relatedQuoteId: quoteId,
+      scheduledFor: new Date(
+        Math.max(
+          nowMs,
+          quoteModel.expirationDateTime.getTime() - QUOTE_EXPIRING_SOON_WINDOW_MS,
+        ),
+      ),
+    },
+    new Date(nowMs),
+  );
+
+  notificationService.runHourlyCheck(new Date(nowMs));
   return true;
 }
 
@@ -409,12 +440,15 @@ export function updateQuote(
     return false;
   }
 
-  const nextTotalCents = calculateQuoteTotalCents(input.updates);
   const quoteModel = toDomainQuote(quoteRecord);
   quoteModel.startAddress = input.updates.fromAddress;
   quoteModel.endAddress = input.updates.toAddress;
-  quoteModel.distance = `${input.updates.distanceKm}km`;
-  quoteModel.apartmentSize = `${input.updates.itemsCount} items`;
+  quoteModel.moveDateISO = input.updates.moveDateISO;
+  quoteModel.moveTime = input.updates.moveTime;
+  quoteModel.distanceKm = input.updates.distanceKm;
+  quoteModel.itemsCount = input.updates.itemsCount;
+  quoteModel.hasPacking = input.updates.hasPacking;
+  quoteModel.hasStorage = input.updates.hasStorage;
   quoteModel.qtyResidents = Math.max(1, Math.ceil(input.updates.itemsCount / 15));
   quoteModel.serviceOption =
     input.updates.hasPacking || input.updates.hasStorage
@@ -422,15 +456,24 @@ export function updateQuote(
           .filter(Boolean)
           .join("+")
       : "move_only";
-  quoteModel.totalCost = nextTotalCents / 100;
+  quoteModel.totalCost = calculateQuoteTotalCents(input.updates) / 100;
+  quoteModel.expirationDateTime = new Date(nowMs + QUOTE_EXPIRY_WINDOW_MS);
+  quoteModel.status = "active";
+  quoteModel.heldSlotId = undefined;
+
+  try {
+    quoteModel.generate();
+  } catch {
+    return false;
+  }
 
   db.quotes = db.quotes.map((record) =>
     record.id === quoteRecord.id
       ? toDbQuote(quoteModel, {
           ...record,
           input: input.updates,
-          totalCents: nextTotalCents,
-          status: record.status === "accepted" ? "active" : record.status,
+          totalCents: calculateQuoteTotalCents(input.updates),
+          status: "active",
           heldSlotId: undefined,
         })
       : record,
@@ -440,9 +483,13 @@ export function updateQuote(
 }
 
 export function rejectQuote(db: MockDb, quoteId: string): boolean {
-  const quote = db.quotes.find((record) => record.id === quoteId);
-  if (!quote || quote.status !== "active") return false;
-  quote.status = "declined";
+  const quoteRecord = db.quotes.find((record) => record.id === quoteId);
+  if (!quoteRecord) return false;
+  const quoteModel = toDomainQuote(quoteRecord);
+  if (!quoteModel.decline()) return false;
+  db.quotes = db.quotes.map((record) =>
+    record.id === quoteId ? toDbQuote(quoteModel, record) : record,
+  );
   return true;
 }
 
@@ -451,50 +498,35 @@ export function expireQuotes(
   nowMs = Date.now(),
   idFactory?: IdFactory,
 ): void {
+  const notificationService = createDomainNotificationService(
+    db,
+    idFactory,
+    nowMs,
+    "in_app",
+  );
+
   db.quotes = db.quotes.map((quoteRecord) => {
     const quoteModel = toDomainQuote(quoteRecord);
-    if (
-      quoteModel.status === "active" &&
-      quoteModel.expirationDateTime.getTime() <= nowMs
-    ) {
-      quoteModel.expire(nowMs);
-    }
+    quoteModel.expire(nowMs);
     return toDbQuote(quoteModel, quoteRecord);
   });
 
-  db.quotes.forEach((quoteRecord) => {
-    if (!quoteRecord.userId) return;
-    if (quoteRecord.status === "active") {
-      const msToExpiry = quoteRecord.expiresAtMs - nowMs;
-      if (msToExpiry > 0 && msToExpiry <= QUOTE_EXPIRING_SOON_WINDOW_MS) {
-        createNotification(db, {
-          idFactory,
-          type: "quote_expiring_soon",
-          title: "Quote expiring soon",
-          message: "Your quote will expire soon.",
-          nowMs,
-          recipientUserId: quoteRecord.userId,
-          recipientRole: "customer",
-          relatedUserId: quoteRecord.userId,
-          relatedQuoteId: quoteRecord.id,
-        });
-      }
-      return;
-    }
+  notificationService.runHourlyCheck(new Date(nowMs));
 
-    if (quoteRecord.status === "expired") {
-      createNotification(db, {
-        idFactory,
+  db.quotes.forEach((quoteRecord) => {
+    if (!quoteRecord.userId || quoteRecord.status !== "expired") return;
+    notificationService.sendNotification(
+      {
         type: "quote_expired",
         title: "Quote expired",
         message: "Your quote has expired.",
-        nowMs,
         recipientUserId: quoteRecord.userId,
         recipientRole: "customer",
         relatedUserId: quoteRecord.userId,
         relatedQuoteId: quoteRecord.id,
-      });
-    }
+      },
+      new Date(nowMs),
+    );
   });
 }
 
@@ -532,30 +564,28 @@ export function submitFeedback(
   );
   if (alreadySubmitted) return false;
 
+  const feedbackRepository = createFeedbackRepository(db, idFactory);
   const feedbackId = idFactory("fb");
-  const templateFeedback = {
+  const userModel = toDomainUser(activeUser);
+  const feedbackModel = toDomainFeedback({
     id: feedbackId,
     feedbackId: parseNumericId(feedbackId),
     submissionDateISO: new Date(nowMs).toISOString().slice(0, 10),
     review: input.message,
     reason: input.context,
-    createdAtMs: nowMs,
     userId: activeUser.id,
-    ...input,
-  };
-  const feedbackModel = toDomainFeedback(templateFeedback);
-  feedbackModel.reason = input.context;
-  if (!feedbackModel.validate()) return false;
+    quoteId,
+    createdAtMs: nowMs,
+    context: input.context,
+    rating: input.rating ?? 3,
+    message: input.message,
+  });
 
-  const userModel = toDomainUser(activeUser);
   if (userModel instanceof Client) {
-    userModel.submitFeedback(feedbackModel);
-  } else if (!feedbackModel.submit()) {
-    return false;
+    return Boolean(userModel.submitFeedback(feedbackModel, feedbackRepository));
   }
 
-  db.feedback = [toDbFeedback(feedbackModel, templateFeedback), ...db.feedback];
-  return true;
+  return feedbackModel.submit(feedbackRepository);
 }
 
 export function confirmBooking(
@@ -567,16 +597,25 @@ export function confirmBooking(
   const activeUser = findActiveUser(db);
   if (!activeUser) return false;
 
+  const userModel = toDomainUser(activeUser);
+  if (!(userModel instanceof Client)) return false;
+
   const quoteRecord = db.quotes.find((record) => record.id === input.quoteId);
-  if (!quoteRecord) return false;
+  if (!quoteRecord || quoteRecord.userId !== activeUser.id) return false;
   if (quoteRecord.status !== "active" && quoteRecord.status !== "accepted") {
     return false;
   }
+  if (
+    db.bookings.some((booking) => booking.quoteId === quoteRecord.id) ||
+    db.payments.some((payment) => payment.quoteId === quoteRecord.id)
+  ) {
+    return false;
+  }
+
+  const requiredDepositCents = DEFAULT_REQUIRED_DEPOSIT_CENTS;
+  if (input.depositCents < requiredDepositCents) return false;
 
   const quoteModel = toDomainQuote(quoteRecord);
-  const paymentModel = toDomainPayment(nowMs, input.depositCents, "USD");
-  if (!paymentModel.processPayment()) return false;
-  quoteModel.accept();
   const quoteDayOfWeek = getDayOfWeek(quoteRecord.input.moveDateISO);
   const generatedSlots = db.availability
     .filter((availability) => availability.dayOfWeek === quoteDayOfWeek)
@@ -593,80 +632,92 @@ export function confirmBooking(
         status: "available" as const,
       };
     });
+
   if (generatedSlots.length > 0) {
     db.timeSlots = [...generatedSlots, ...db.timeSlots];
   }
 
-  const availableSlotRecords = db.timeSlots.filter((slotRecord) => slotRecord.status === "available");
+  const availableSlotRecords = db.timeSlots.filter(
+    (slotRecord) => slotRecord.status === "available",
+  );
   const allAvailableSlots = availableSlotRecords.map((slotRecord) =>
     toDomainServiceSlot(slotRecord),
   );
   const availableSlots = quoteModel.getAvailability(allAvailableSlots);
-  const selectedSlot = availableSlots[0];
-  let scheduledSlotId = idFactory("slot");
+  let selectedSlot = availableSlots[0];
 
-  if (selectedSlot) {
-    try {
-      selectedSlot.validateAvailability();
-      if (selectedSlot.reserve()) {
-        const selectedDateIso = selectedSlot.date.toISOString().slice(0, 10);
-        const matchingRecord = availableSlotRecords.find(
-          (slotRecord) =>
-            slotRecord.dateISO === selectedDateIso &&
-            slotRecord.startTime === selectedSlot.startTime &&
-            slotRecord.endTime === selectedSlot.endTime,
-        );
-        if (matchingRecord) {
-          scheduledSlotId = matchingRecord.id;
-          db.timeSlots = db.timeSlots.map((slotRecord) =>
-            slotRecord.id === matchingRecord.id
-              ? toDbServiceSlot(selectedSlot, slotRecord)
-              : slotRecord,
-          );
-        }
-      }
-    } catch {
-      // Fall through to creating a reserved slot.
-    }
+  if (selectedSlot && selectedSlot.reserve(quoteRecord.id)) {
+    db.timeSlots = db.timeSlots.map((slotRecord) =>
+      slotRecord.id === selectedSlot.recordId
+        ? toDbServiceSlot(selectedSlot, slotRecord)
+        : slotRecord,
+    );
   }
 
   if (!selectedSlot) {
-    getManagerUsers(db).forEach((managerUser) => {
-      createNotification(db, {
-        idFactory,
-        type: "no_timeslots_available",
-        title: "No available time slots",
-        message: `No available time slots could be generated for quote/order #${quoteRecord.id}. Please manually review employee availability.`,
-        nowMs,
-        recipientUserId: managerUser.id,
-        recipientRole: managerUser.role,
-        relatedQuoteId: quoteRecord.id,
-        relatedUserId: managerUser.id,
+    const fallbackSlotId = idFactory("slot");
+    const fallbackSlotRecord = {
+      id: fallbackSlotId,
+      slotId: parseNumericId(fallbackSlotId),
+      dateISO: quoteRecord.input.moveDateISO,
+      startTime: quoteRecord.input.moveTime,
+      endTime: addHoursToTime(quoteRecord.input.moveTime, 2),
+      status: "reserved" as const,
+      heldByQuoteId: quoteRecord.id,
+    };
+    db.timeSlots = [fallbackSlotRecord, ...db.timeSlots];
+    selectedSlot = toDomainServiceSlot(fallbackSlotRecord);
+  }
+
+  const bookingId = idFactory("b");
+  const paymentId = idFactory("pay");
+  const acceptance = userModel.acceptQuote(quoteModel, {
+    bookingId: parseNumericId(bookingId),
+    bookingRecordId: bookingId,
+    paymentId: parseNumericId(paymentId),
+    paymentRecordId: paymentId,
+    depositCents: input.depositCents,
+    currency: "USD",
+    userRecordId: activeUser.id,
+    quoteRecordId: quoteRecord.id,
+    scheduledSlotId: selectedSlot.recordId,
+    now: new Date(nowMs),
+    requiredDepositCents,
+  });
+
+  if (!acceptance.success || !acceptance.booking || !acceptance.payment) {
+    return false;
+  }
+
+  const managerRecord = getManagerUsers(db)[0];
+  const bookingModel = acceptance.booking;
+
+  if (managerRecord) {
+    const managerModel = toDomainUser(managerRecord);
+    if (managerModel instanceof OperationsManager) {
+      const employeeNames = collectEmployeeNamesForSlot(db, {
+        moveDateISO: quoteModel.moveDateISO,
+        startTime: selectedSlot.startTime,
+        endTime: selectedSlot.endTime,
+        availabilityId: selectedSlot.availabilityId,
       });
-    });
+      managerModel.scheduleEmployees({
+        booking: bookingModel,
+        slot: selectedSlot,
+        availableEmployeeNames: employeeNames,
+        requestedCrewSize: Math.max(
+          1,
+          Math.min(3, Math.ceil(quoteModel.itemsCount / 20)),
+        ),
+      });
+    }
   }
 
-  const slotExists = db.timeSlots.some((slot) => slot.id === scheduledSlotId);
-  if (!slotExists) {
-    db.timeSlots = [
-      {
-        id: scheduledSlotId,
-        slotId: parseNumericId(scheduledSlotId),
-        dateISO: quoteRecord.input.moveDateISO,
-        startTime: quoteRecord.input.moveTime,
-        endTime: addHoursToTime(quoteRecord.input.moveTime, 2),
-        status: "reserved",
-      },
-      ...db.timeSlots,
-    ];
-  }
-
-  quoteRecord.heldSlotId = scheduledSlotId;
+  quoteModel.heldSlotId = selectedSlot.recordId;
   db.quotes = db.quotes.map((record) =>
     record.id === quoteRecord.id ? toDbQuote(quoteModel, record) : record,
   );
 
-  const bookingId = idFactory("b");
   const bookingTemplate = {
     id: bookingId,
     bookingId: parseNumericId(bookingId),
@@ -674,58 +725,93 @@ export function confirmBooking(
     quoteId: quoteRecord.id,
     createdAtMs: nowMs,
     confirmedAtMs: nowMs,
-    depositRequireAmountCents: Math.round(paymentModel.amount * 100),
-    depositPaidAmountCents: Math.round(paymentModel.amount * 100),
+    depositRequireAmountCents: requiredDepositCents,
+    depositPaidAmountCents: input.depositCents,
     status: "confirmed" as const,
-    depositCents: Math.round(paymentModel.amount * 100),
-    scheduledSlotId,
+    depositCents: input.depositCents,
+    scheduledSlotId: selectedSlot.recordId ?? bookingId,
+    assignedEmployeeNames: bookingModel.assignedEmployeeNames,
+    schedulingNote: bookingModel.schedulingNote,
   };
-  const bookingModel = toDomainBooking(bookingTemplate);
-  bookingModel.depositRequireAmount = paymentModel.amount;
-  bookingModel.depositPaidAmount = paymentModel.amount;
-  bookingModel.createBooking();
-  bookingModel.confirm();
-
-  const notificationService = new NotificationService(nowMs, "email");
-  notificationService.sendNotification();
-  notificationService.scheduleNotification("booking_confirmation");
-  notificationService.runHourlyCheck();
 
   db.bookings = [toDbBooking(bookingModel, bookingTemplate), ...db.bookings];
-  const paymentId = idFactory("pay");
   db.payments = [
-    toDbPayment(paymentModel, {
+    toDbPayment(acceptance.payment, {
       id: paymentId,
       paymentId: parseNumericId(paymentId),
-      bookingId: bookingTemplate.id,
+      bookingId,
       quoteId: quoteRecord.id,
       userId: activeUser.id,
     }),
     ...db.payments,
   ];
 
-  const notificationId = idFactory("ntf");
-  db.notifications = [
+  const notificationService = createDomainNotificationService(
+    db,
+    idFactory,
+    nowMs,
+    userModel.preferredNotificationChannel || "email",
+  );
+
+  notificationService.sendNotification(
     {
-      id: notificationId,
       type: "booking_confirmation",
       title: "Booking confirmed",
-      serviceId: nowMs,
-      channel: "email",
-      message: "booking_confirmation",
-      status: "sent",
-      createdAtMs: nowMs,
-      scheduledForMs: nowMs,
-      sentAtMs: nowMs,
-      readAtMs: undefined,
-      recipientRole: "customer",
+      message:
+        bookingModel.assignedEmployeeNames.length > 0
+          ? `Your booking is confirmed. Assigned crew: ${bookingModel.assignedEmployeeNames.join(", ")}.`
+          : "Your booking is confirmed and your deposit was received.",
       recipientUserId: activeUser.id,
+      recipientRole: "customer",
       relatedUserId: activeUser.id,
       relatedQuoteId: quoteRecord.id,
-      relatedBookingId: bookingTemplate.id,
+      relatedBookingId: bookingId,
+      channel: userModel.preferredNotificationChannel || "email",
     },
-    ...db.notifications,
-  ];
+    new Date(nowMs),
+  );
+
+  const reminderAt = buildServiceReminderDate(
+    quoteModel.moveDateISO,
+    quoteModel.moveTime,
+  );
+  if (reminderAt) {
+    notificationService.scheduleNotification(
+      {
+        type: "service_reminder",
+        title: "Upcoming move reminder",
+        message: `Reminder: your move is scheduled for ${quoteModel.moveDateISO} at ${quoteModel.moveTime}.`,
+        recipientUserId: activeUser.id,
+        recipientRole: "customer",
+        relatedUserId: activeUser.id,
+        relatedQuoteId: quoteRecord.id,
+        relatedBookingId: bookingId,
+        channel: userModel.preferredNotificationChannel || "email",
+        scheduledFor: reminderAt,
+      },
+      new Date(nowMs),
+    );
+  }
+
+  if (bookingModel.assignedEmployeeNames.length === 0) {
+    getManagerUsers(db).forEach((managerUser) => {
+      notificationService.sendNotification(
+        {
+          type: "no_timeslots_available",
+          title: "Manual scheduling required",
+          message: `Booking ${bookingId} needs manual employee scheduling review.`,
+          recipientUserId: managerUser.id,
+          recipientRole: managerUser.role,
+          relatedUserId: managerUser.id,
+          relatedQuoteId: quoteRecord.id,
+          relatedBookingId: bookingId,
+        },
+        new Date(nowMs),
+      );
+    });
+  }
+
+  notificationService.runHourlyCheck(new Date(nowMs));
   return true;
 }
 

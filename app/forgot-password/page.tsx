@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
 
 export default function ForgotPasswordPage() {
-  const { state } = useAppStore();
+  const { state, dispatch } = useAppStore();
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -39,7 +39,17 @@ export default function ForgotPasswordPage() {
             }
 
             if (exists) {
-              setMessage("Reset link sent (mock). Check your email inbox.");
+              const temporaryPassword = "reset123";
+              dispatch({
+                type: "auth/resetPassword",
+                payload: {
+                  email: normalized,
+                  newPassword: temporaryPassword,
+                },
+              });
+              setMessage(
+                `Password reset complete. Temporary password: ${temporaryPassword}`,
+              );
               return;
             }
 

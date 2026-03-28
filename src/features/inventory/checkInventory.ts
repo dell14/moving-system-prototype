@@ -1,5 +1,5 @@
 import type { InventoryItem } from "@/src/mockDb/types";
-import { toDomainInventoryItem } from "@/src/domain/classes";
+import { toDomainInventoryItem } from "@/src/mappers";
 
 // Minimum quantities for a small moving company (2-3 moves/day)
 const THRESHOLDS: Record<string, number> = {
@@ -12,21 +12,14 @@ export function checkInventory(inventory: InventoryItem[]): {
   enough: boolean;
   message: string;
 } {
-  const inventoryModels = inventory.map((item) => toDomainInventoryItem(item));
-  const byName = inventoryModels.reduce<Record<string, number>>((totals, item) => {
-    const key = item.itemType.toLowerCase();
-    totals[key] = (totals[key] ?? 0) + item.quantity;
-    return totals;
-  }, {});
-
-  const low: string[] = [];
-
-  for (const [name, min] of Object.entries(THRESHOLDS)) {
-    const qty = byName[name] ?? 0;
-    if (qty < min) {
-      low.push(`${name}: ${qty}/${min}`);
-    }
-  }
+  const low = inventory
+    .map((item) => toDomainInventoryItem(item))
+    .map((item) => {
+      const threshold = THRESHOLDS[item.itemType.toLowerCase()] ?? 0;
+      return item.checkInventory({ minimumQuantity: threshold });
+    })
+    .filter((result) => result.status !== "ok")
+    .map((result) => `${result.itemType.toLowerCase()}: ${result.quantity}/${result.minimumQuantity}`);
 
   if (low.length === 0) {
     return {
