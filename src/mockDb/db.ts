@@ -415,6 +415,16 @@ function readDbFromStorage(): MockDb | undefined {
   }
 }
 
+function clearPrototypeStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+    window.sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage cleanup failures are non-fatal for mock persistence.
+  }
+}
+
 function persistDbToStorage(db: MockDb): void {
   if (typeof window === "undefined") return;
   try {
@@ -435,6 +445,7 @@ export function getDb(): MockDb {
 
 export function resetDb(): MockDb {
   const g = getGlobal();
+  clearPrototypeStorage();
   g[GLOBAL_KEY] = seedDb();
   persistDbToStorage(g[GLOBAL_KEY]!);
   return g[GLOBAL_KEY]!;

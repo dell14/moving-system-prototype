@@ -497,7 +497,9 @@ export function expireQuotes(
   db: MockDb,
   nowMs = Date.now(),
   idFactory?: IdFactory,
+  options?: { skippedQuoteIds?: Iterable<string> },
 ): void {
+  const skippedQuoteIds = new Set(options?.skippedQuoteIds ?? []);
   const notificationService = createDomainNotificationService(
     db,
     idFactory,
@@ -506,6 +508,7 @@ export function expireQuotes(
   );
 
   db.quotes = db.quotes.map((quoteRecord) => {
+    if (skippedQuoteIds.has(quoteRecord.id)) return quoteRecord;
     const quoteModel = toDomainQuote(quoteRecord);
     quoteModel.expire(nowMs);
     return toDbQuote(quoteModel, quoteRecord);
@@ -597,8 +600,25 @@ export function confirmBooking(
   const activeUser = findActiveUser(db);
   if (!activeUser) return false;
 
-  const userModel = toDomainUser(activeUser);
-  if (!(userModel instanceof Client)) return false;
+  const domainUser = toDomainUser(activeUser);
+  const bookingActor =
+    domainUser instanceof Client
+      ? domainUser
+      : new Client({
+          recordId: activeUser.id,
+          userId: activeUser.userId,
+          username: activeUser.username,
+          accountStatus: activeUser.accountStatus,
+          passwordHash: activeUser.passwordHash || activeUser.password,
+          createdDate: new Date(activeUser.createdDateISO),
+          firstName: activeUser.firstName,
+          lastName: activeUser.lastName,
+          email: activeUser.email,
+          phoneNumber: activeUser.phoneNumber,
+          preferredNotificationChannel:
+            activeUser.preferredNotificationChannel ?? "email",
+          numberOfServiceRequests: activeUser.numberOfServiceRequests ?? 0,
+        });
 
   const quoteRecord = db.quotes.find((record) => record.id === input.quoteId);
   if (!quoteRecord || quoteRecord.userId !== activeUser.id) return false;
@@ -671,7 +691,7 @@ export function confirmBooking(
 
   const bookingId = idFactory("b");
   const paymentId = idFactory("pay");
-  const acceptance = userModel.acceptQuote(quoteModel, {
+  const acceptance = bookingActor.acceptQuote(quoteModel, {
     bookingId: parseNumericId(bookingId),
     bookingRecordId: bookingId,
     paymentId: parseNumericId(paymentId),
@@ -746,11 +766,12 @@ export function confirmBooking(
     ...db.payments,
   ];
 
+  const notificationChannel = bookingActor.preferredNotificationChannel || "email";
   const notificationService = createDomainNotificationService(
     db,
     idFactory,
     nowMs,
-    userModel.preferredNotificationChannel || "email",
+    notificationChannel,
   );
 
   notificationService.sendNotification(
@@ -766,7 +787,7 @@ export function confirmBooking(
       relatedUserId: activeUser.id,
       relatedQuoteId: quoteRecord.id,
       relatedBookingId: bookingId,
-      channel: userModel.preferredNotificationChannel || "email",
+      channel: notificationChannel,
     },
     new Date(nowMs),
   );
@@ -786,7 +807,7 @@ export function confirmBooking(
         relatedUserId: activeUser.id,
         relatedQuoteId: quoteRecord.id,
         relatedBookingId: bookingId,
-        channel: userModel.preferredNotificationChannel || "email",
+        channel: notificationChannel,
         scheduledFor: reminderAt,
       },
       new Date(nowMs),

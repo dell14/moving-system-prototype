@@ -15,6 +15,7 @@ import {
 import { useUnsavedChangesWarning } from "@/src/hooks/useUnsavedChangesWarning";
 
 type PaymentErrors = {
+  form?: string;
   amount?: string;
   name?: string;
   cardNumber?: string;
@@ -22,6 +23,9 @@ type PaymentErrors = {
   cvc?: string;
   zip?: string;
 };
+
+const FIXED_DEPOSIT_DOLLARS = 100;
+const FIXED_DEPOSIT_CENTS = FIXED_DEPOSIT_DOLLARS * 100;
 
 function QuotePaymentPageFallback() {
   return (
@@ -41,49 +45,88 @@ function QuotePaymentPageContent() {
   const searchParams = useSearchParams();
   const quoteId = searchParams.get("quoteId");
   const promptedOutcomeKeyRef = useRef<string | null>(null);
+  const bookingConfirmedRef = useRef(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [amount, setAmount] = useState("150");
   const [name, setName] = useState("");
   const [cardNumber, setCardNumber] = useState("");
   const [expiry, setExpiry] = useState("");
   const [cvc, setCvc] = useState("");
   const [zip, setZip] = useState("");
   const [errors, setErrors] = useState<PaymentErrors>({});
+  const [submitAttemptCount, setSubmitAttemptCount] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const now = Date.now();
-      setNowMs(now);
-      dispatch({ type: "quote/expireSweep", payload: { nowMs: now } });
+      setNowMs(Date.now());
     }, 1000);
     return () => clearInterval(interval);
-  }, [dispatch]);
-
-  const quote = useMemo(() => {
-    if (!quoteId) return undefined;
-    return state.db.quotes.find((q) => q.id === quoteId);
-  }, [quoteId, state.db.quotes]);
+  }, []);
 
   const activeUser = useMemo(
     () => state.db.users.find((u) => u.id === state.db.activeUserId),
     [state.db.activeUserId, state.db.users],
   );
 
+  const quote = useMemo(() => {
+    if (!quoteId || !activeUser) return undefined;
+    return state.db.quotes.find((q) => q.id === quoteId && q.userId === activeUser.id);
+  }, [activeUser, quoteId, state.db.quotes]);
+  const quoteRecordId = quote?.id;
+
   const booking = useMemo(() => {
     if (!quote) return undefined;
     return state.db.bookings.find((b) => b.quoteId === quote.id);
   }, [quote, state.db.bookings]);
 
-  const isExpired = quote ? getQuoteExpiresAtMs(quote) <= nowMs : false;
+  const pausedQuoteTimer =
+    quote && state.pausedQuoteTimer?.quoteId === quote.id
+      ? state.pausedQuoteTimer
+      : null;
+  const effectiveNowMs = pausedQuoteTimer?.startedAtMs ?? nowMs;
+  const isExpired = quote ? getQuoteExpiresAtMs(quote) <= effectiveNowMs : false;
   const isDeclined = quote?.status === "declined";
   const hasUnsavedChanges =
     !booking &&
-    [amount, name, cardNumber, expiry, cvc, zip].some((value) => value.trim().length > 0);
+    [name, cardNumber, expiry, cvc, zip].some((value) => value.trim().length > 0);
+  const submitError =
+    submitAttemptCount > 0 && !booking
+      ? "We couldn't confirm your deposit. Please review the form and try again."
+      : undefined;
 
   useUnsavedChangesWarning({
     isEnabled: hasUnsavedChanges,
     message: "Are you sure you want to leave? Your payment form details will be lost.",
   });
+
+  useEffect(() => {
+    bookingConfirmedRef.current = Boolean(booking);
+  }, [booking]);
+
+  useEffect(() => {
+    if (!quoteRecordId || bookingConfirmedRef.current) return undefined;
+
+    dispatch({
+      type: "quote/pauseTimer",
+      payload: { quoteId: quoteRecordId, startedAtMs: Date.now() },
+    });
+
+    return () => {
+      if (bookingConfirmedRef.current) {
+        dispatch({ type: "quote/clearTimerPause", payload: { quoteId: quoteRecordId } });
+        return;
+      }
+
+      dispatch({
+        type: "quote/resumeTimer",
+        payload: { quoteId: quoteRecordId, resumedAtMs: Date.now() },
+      });
+    };
+  }, [dispatch, quoteRecordId]);
+
+  useEffect(() => {
+    if (!booking || !quoteRecordId) return;
+    dispatch({ type: "quote/clearTimerPause", payload: { quoteId: quoteRecordId } });
+  }, [booking, dispatch, quoteRecordId]);
 
   useEffect(() => {
     if (!activeUser || !quote || !quoteId || booking) return;
@@ -120,6 +163,21 @@ function QuotePaymentPageContent() {
     router,
     state.db.feedback,
   ]);
+
+  if (!activeUser) {
+    return (
+      <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
+        <main className="mx-auto w-full max-w-xl space-y-4">
+          <Link className="text-sm underline" href="/login">
+            {"<-"} Go to login
+          </Link>
+          <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+            Please log in to complete payment.
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (!quoteId || !quote) {
     return (
@@ -174,6 +232,16 @@ function QuotePaymentPageContent() {
                 className="space-y-4 rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                 onSubmit={(event) => {
                   event.preventDefault();
+                  if (!activeUser) {
+                    setErrors({ form: "Please log in to complete payment." });
+                    return;
+                  }
+                  if (!quote || quote.userId !== activeUser.id) {
+                    setErrors({
+                      form: "We couldn't find that quote for your account.",
+                    });
+                    return;
+                  }
                   if (isExpired) {
                     setErrors({ amount: "This quote has expired." });
                     return;
@@ -184,8 +252,6 @@ function QuotePaymentPageContent() {
                   }
                   const nextErrors: PaymentErrors = {};
                   const normalizedCard = cardNumber.replace(/\s+/g, "");
-                  if (!amount || Number(amount) <= 0)
-                    nextErrors.amount = "Enter a valid deposit amount.";
                   if (!name.trim()) nextErrors.name = "Enter the cardholder name.";
                   if (!/^\d{16}$/.test(normalizedCard))
                     nextErrors.cardNumber = "Enter a 16-digit card number.";
@@ -193,18 +259,19 @@ function QuotePaymentPageContent() {
                     nextErrors.expiry = "Use MM/YY format.";
                   if (!/^\d{3,4}$/.test(cvc))
                     nextErrors.cvc = "Enter a 3 or 4 digit CVC.";
-                  if (!/^\d{5}$/.test(zip))
-                    nextErrors.zip = "Enter a 5 digit ZIP code.";
+                  if (!zip.trim())
+                    nextErrors.zip = "Enter the billing ZIP or postal code.";
                   if (Object.keys(nextErrors).length > 0) {
                     setErrors(nextErrors);
                     return;
                   }
                   setErrors({});
+                  setSubmitAttemptCount((count) => count + 1);
                   dispatch({
                     type: "booking/confirm",
                     payload: {
                       quoteId: quote.id,
-                      depositCents: Math.round(Number(amount) * 100),
+                      depositCents: FIXED_DEPOSIT_CENTS,
                     },
                   });
                 }}
@@ -220,8 +287,8 @@ function QuotePaymentPageContent() {
                   <div className="text-xs text-zinc-500">Deposit amount</div>
                   <input
                     className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    value={amount}
-                    onChange={(event) => setAmount(event.target.value)}
+                    value={`$${FIXED_DEPOSIT_DOLLARS.toFixed(2)}`}
+                    readOnly
                   />
                   {errors.amount ? (
                     <p className="text-xs text-red-600">{errors.amount}</p>
@@ -283,19 +350,26 @@ function QuotePaymentPageContent() {
                 </div>
 
                 <label className="block space-y-1">
-                  <div className="text-xs text-zinc-500">Billing ZIP</div>
+                  <div className="text-xs text-zinc-500">Billing ZIP / postal code</div>
                   <input
                     className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                     value={zip}
                     onChange={(event) => setZip(event.target.value)}
-                    placeholder="94107"
+                    placeholder="94107 or H2X 1Y4"
                   />
                   {errors.zip ? (
                     <p className="text-xs text-red-600">{errors.zip}</p>
                   ) : null}
                 </label>
 
+                {errors.form ? (
+                  <p className="text-xs text-red-600">{errors.form}</p>
+                ) : submitError ? (
+                  <p className="text-xs text-red-600">{submitError}</p>
+                ) : null}
+
                 <button
+                  type="submit"
                   className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-300 dark:bg-zinc-50 dark:text-zinc-900 dark:disabled:bg-zinc-700"
                   disabled={isExpired || isDeclined}
                 >
@@ -325,6 +399,8 @@ function QuotePaymentPageContent() {
                 <span className="text-red-600">Quote declined.</span>
               ) : isExpired ? (
                 <span className="text-red-600">Quote expired.</span>
+              ) : pausedQuoteTimer ? (
+                "Quote timer paused while you complete payment."
               ) : (
                 "Timer is running."
               )}

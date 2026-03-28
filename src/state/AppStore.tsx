@@ -24,6 +24,10 @@ import {
 
 type AppState = {
   db: MockDb;
+  pausedQuoteTimer: {
+    quoteId: string;
+    startedAtMs: number;
+  } | null;
 };
 
 type Action =
@@ -98,6 +102,18 @@ type Action =
       };
     }
   | { type: "quote/reject"; payload: { quoteId: string } }
+  | {
+      type: "quote/pauseTimer";
+      payload: { quoteId: string; startedAtMs?: number };
+    }
+  | {
+      type: "quote/resumeTimer";
+      payload: { quoteId: string; resumedAtMs?: number };
+    }
+  | {
+      type: "quote/clearTimerPause";
+      payload?: { quoteId?: string };
+    }
   | { type: "quote/expireSweep"; payload?: { nowMs?: number } }
   | {
       type: "notification/markRead";
@@ -118,24 +134,24 @@ function reducer(state: AppState, action: Action): AppState {
 
   switch (action.type) {
     case "db/reset": {
-      return { db: resetDb() };
+      return { db: resetDb(), pausedQuoteTimer: null };
     }
 
     case "auth/login": {
       const didLogin = loginUser(db, action.payload.email, action.payload.password);
       if (!didLogin) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "auth/register": {
       const didRegister = registerUser(db, action.payload, uid);
       if (!didRegister) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "auth/logout": {
       logoutUser(db);
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "auth/resetPassword": {
@@ -145,56 +161,113 @@ function reducer(state: AppState, action: Action): AppState {
         action.payload.newPassword,
       );
       if (!didReset) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "inventory/add": {
       addInventoryItem(db, action.payload, uid);
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "inventory/remove": {
       removeInventoryItem(db, action.payload.id, action.payload.quantity);
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "availability/add": {
       addAvailability(db, action.payload, uid);
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "availability/remove": {
       removeAvailability(db, action.payload.id);
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "feedback/add": {
       const didSubmit = submitFeedback(db, action.payload, uid);
       if (!didSubmit) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "quote/create": {
       const didCreate = createQuote(db, action.payload, uid);
       if (!didCreate) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "quote/update": {
       const didUpdate = updateQuote(db, action.payload);
       if (!didUpdate) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "quote/reject": {
       const didReject = rejectQuote(db, action.payload.quoteId);
       if (!didReject) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
+    }
+
+    case "quote/pauseTimer": {
+      const quote = state.db.quotes.find((record) => record.id === action.payload.quoteId);
+      if (!quote) return state;
+      if (state.pausedQuoteTimer?.quoteId === action.payload.quoteId) return state;
+      return {
+        ...state,
+        pausedQuoteTimer: {
+          quoteId: action.payload.quoteId,
+          startedAtMs: action.payload.startedAtMs ?? Date.now(),
+        },
+      };
+    }
+
+    case "quote/resumeTimer": {
+      const pausedQuoteTimer = state.pausedQuoteTimer;
+      if (!pausedQuoteTimer || pausedQuoteTimer.quoteId !== action.payload.quoteId) {
+        return state;
+      }
+
+      const resumedAtMs = action.payload.resumedAtMs ?? Date.now();
+      const elapsedMs = Math.max(0, resumedAtMs - pausedQuoteTimer.startedAtMs);
+      const quote = db.quotes.find((record) => record.id === pausedQuoteTimer.quoteId);
+      const hasCompletedBooking = db.bookings.some(
+        (booking) => booking.quoteId === pausedQuoteTimer.quoteId,
+      );
+      const hasProcessedPayment = db.payments.some(
+        (payment) => payment.quoteId === pausedQuoteTimer.quoteId,
+      );
+
+      if (
+        quote &&
+        elapsedMs > 0 &&
+        !hasCompletedBooking &&
+        !hasProcessedPayment &&
+        quote.status === "active"
+      ) {
+        const nextExpiresAtMs = quote.expiresAtMs + elapsedMs;
+        quote.expiresAtMs = nextExpiresAtMs;
+        quote.expirationDateTimeISO = new Date(nextExpiresAtMs).toISOString();
+      }
+
+      return { ...state, db: { ...db }, pausedQuoteTimer: null };
+    }
+
+    case "quote/clearTimerPause": {
+      if (!state.pausedQuoteTimer) return state;
+      if (
+        action.payload?.quoteId &&
+        state.pausedQuoteTimer.quoteId !== action.payload.quoteId
+      ) {
+        return state;
+      }
+      return { ...state, pausedQuoteTimer: null };
     }
 
     case "quote/expireSweep": {
-      expireQuotes(db, action.payload?.nowMs, uid);
-      return { db: { ...db } };
+      expireQuotes(db, action.payload?.nowMs, uid, {
+        skippedQuoteIds: state.pausedQuoteTimer ? [state.pausedQuoteTimer.quoteId] : [],
+      });
+      return { ...state, db: { ...db } };
     }
 
     case "notification/markRead": {
@@ -204,19 +277,19 @@ function reducer(state: AppState, action: Action): AppState {
         action.payload.nowMs,
       );
       if (!didUpdate) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "notification/markAllRead": {
       const didUpdate = markAllNotificationsRead(db, action.payload?.nowMs);
       if (!didUpdate) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     case "booking/confirm": {
       const didConfirm = confirmBooking(db, action.payload, uid);
       if (!didConfirm) return state;
-      return { db: { ...db } };
+      return { ...state, db: { ...db } };
     }
 
     default:
@@ -232,6 +305,7 @@ const AppStoreContext = createContext<{
 export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
     db: getDb(),
+    pausedQuoteTimer: null,
   }));
 
   useEffect(() => {

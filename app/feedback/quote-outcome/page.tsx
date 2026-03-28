@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
 import {
   getQuoteFromAddress,
@@ -46,6 +46,7 @@ function QuoteOutcomeFeedbackPageContent() {
   const searchParams = useSearchParams();
   const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [message, setMessage] = useState("");
+  const [navigationError, setNavigationError] = useState("");
 
   const activeUser = useMemo(
     () => state.db.users.find((u) => u.id === state.db.activeUserId),
@@ -82,6 +83,54 @@ function QuoteOutcomeFeedbackPageContent() {
     if (context === "declined_quote") return quote.status !== "declined";
     return quote.status !== "expired";
   }, [context, quote]);
+
+  const requiresCompletedFeedback = context === "expired_quote" && !alreadySubmitted;
+
+  useEffect(() => {
+    if (!requiresCompletedFeedback) return undefined;
+
+    const currentUrl = window.location.href;
+    const blockNavigation = (event?: MouseEvent) => {
+      event?.preventDefault();
+      event?.stopPropagation();
+      window.history.pushState(null, "", currentUrl);
+      setNavigationError("Please complete the feedback form before continuing.");
+    };
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const anchor = target.closest("a");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (!anchor.href) return;
+      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+
+      const current = new URL(currentUrl);
+      const next = new URL(anchor.href, currentUrl);
+      const isSamePage =
+        current.pathname === next.pathname &&
+        current.search === next.search &&
+        current.hash === next.hash;
+
+      if (isSamePage) return;
+      blockNavigation(event);
+    };
+
+    const handlePopState = () => {
+      blockNavigation();
+    };
+
+    window.history.pushState(null, "", currentUrl);
+    window.addEventListener("popstate", handlePopState);
+    document.addEventListener("click", handleDocumentClick, true);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      document.removeEventListener("click", handleDocumentClick, true);
+    };
+  }, [requiresCompletedFeedback]);
 
   if (!activeUser) {
     return (
@@ -160,6 +209,9 @@ function QuoteOutcomeFeedbackPageContent() {
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             {contextDescription(context)}
           </p>
+          {navigationError ? (
+            <p className="text-xs text-red-600">{navigationError}</p>
+          ) : null}
         </header>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -168,6 +220,7 @@ function QuoteOutcomeFeedbackPageContent() {
             onSubmit={(event) => {
               event.preventDefault();
               if (!message.trim()) return;
+              setNavigationError("");
               dispatch({
                 type: "feedback/add",
                 payload: {
