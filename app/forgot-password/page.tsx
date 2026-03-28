@@ -17,7 +17,7 @@ export default function ForgotPasswordPage() {
         </Link>
 
         <header className="space-y-1">
-          <h1 className="text-2xl font-semibold">Forgot password (mock)</h1>
+          <h1 className="text-2xl font-semibold">Forgot password</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             Enter your email to simulate a reset flow.
           </p>

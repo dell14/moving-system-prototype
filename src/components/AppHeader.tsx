@@ -51,6 +51,18 @@ export function AppHeader() {
     () => visibleNotifications.filter((notification) => !notification.readAtMs).length,
     [visibleNotifications],
   );
+  const primaryLinks = [
+    { href: "/", label: "Home" },
+    { href: "/booking", label: "Booking & Deposit" },
+    { href: "/feedback", label: "Feedback" },
+  ];
+  const managerLinks =
+    hydratedActiveUser?.role === "manager"
+      ? [
+          { href: "/admin/schedule", label: "Schedule" },
+          { href: "/admin/inventory", label: "Inventory" },
+        ]
+      : [];
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -60,37 +72,77 @@ export function AppHeader() {
   }, [dispatch]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/95 backdrop-blur dark:border-zinc-800 dark:bg-black/90">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-3">
-        <Link className="text-sm font-semibold tracking-tight" href="/">
-          SpeedShift
-        </Link>
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-zinc-800 dark:bg-black/90">
+      <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
+        <div className="flex flex-wrap items-center gap-6">
+          <Link className="space-y-0.5" href="/">
+            <div className="text-base font-semibold tracking-[0.18em] text-slate-950 uppercase dark:text-zinc-50">
+              SpeedShift Logistics
+            </div>
+            <div className="text-[11px] text-slate-500 dark:text-zinc-400">
+              Moving, delivery, and storage in Montreal
+            </div>
+          </Link>
+          <nav className="flex flex-wrap items-center gap-5 text-sm">
+            {primaryLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="font-medium text-slate-700 transition hover:text-slate-950 dark:text-zinc-300 dark:hover:text-zinc-50"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
 
-        <div className="relative flex items-center gap-4">
+        <div className="relative flex flex-wrap items-center gap-3">
+          {managerLinks.length > 0 ? (
+            <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-zinc-400">
+              {managerLinks.map((link) => (
+                <Link key={link.href} href={link.href} className="underline-offset-4 hover:underline">
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          ) : null}
+          {hydratedActiveUser ? (
+            <div className="text-xs text-slate-600 dark:text-zinc-400">
+              {hydratedActiveUser.email} ({hydratedActiveUser.role})
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              Log In
+            </Link>
+          )}
+          <Link
+            href="/quote"
+            className="bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+          >
+            Get a Quote
+          </Link>
           <button
             type="button"
-            className="text-[11px] text-zinc-400 transition hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+            className="text-[11px] text-slate-400 transition hover:text-slate-600 dark:text-zinc-500 dark:hover:text-zinc-300"
             onClick={() => {
               const shouldReset = window.confirm(
-                "Reset all demo data and start from a fresh site state?",
+                "Reset all sample data and start from a fresh site state?",
               );
               if (!shouldReset) return;
               setIsPanelOpen(false);
               dispatch({ type: "db/reset" });
             }}
           >
-            Reset demo data
+            Reset sample data
           </button>
-          {hydratedActiveUser ? (
-            <div className="text-xs text-zinc-600 dark:text-zinc-400">
-              {hydratedActiveUser.email} ({hydratedActiveUser.role})
-            </div>
-          ) : null}
           {hydratedActiveUser ? (
             <button
               type="button"
               aria-label="Notifications"
-              className="relative rounded-lg border border-zinc-200 px-2 py-1 text-sm dark:border-zinc-700"
+              className="relative border border-slate-200 px-2 py-1 text-sm text-slate-700 dark:border-zinc-700 dark:text-zinc-200"
               onClick={() => setIsPanelOpen((current) => !current)}
             >
               <svg
@@ -113,7 +165,7 @@ export function AppHeader() {
           ) : null}
 
           {hydratedActiveUser && isPanelOpen ? (
-            <div className="absolute right-0 top-12 w-96 rounded-xl border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="absolute right-0 top-12 w-96 border border-slate-200 bg-white p-3 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
               <div className="mb-2 flex items-center justify-between">
                 <div className="text-sm font-semibold">Notifications</div>
                 <button

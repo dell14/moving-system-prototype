@@ -155,14 +155,14 @@ function QuotePageContent() {
             className="text-sm underline"
             onClick={() => dispatch({ type: "quote/expireSweep" })}
           >
-            Run 24h expiry sweep (mock)
+            Run 24h expiry sweep
           </button>
         </div>
 
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold">Generate quote (UC-02)</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Uses a simple mock pricing function. Requires being logged in.
+            Uses a simple estimate. Requires being logged in.
           </p>
         </header>
 
@@ -236,7 +236,7 @@ function QuotePageContent() {
             <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950 lg:col-span-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="text-sm font-semibold">Accept quote & pay deposit (mock)</div>
+                  <div className="text-sm font-semibold">Accept quote & pay deposit</div>
                   <p className="text-xs text-zinc-600 dark:text-zinc-400">
                     Review the quote, make changes if needed, then continue to confirmation and
                     payment.
@@ -290,7 +290,7 @@ function QuotePageContent() {
                       </div>
                     ) : null}
                     <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-                      <span>Mock 24h timer:</span>
+                      <span>Quote timer:</span>
                       {selectedQuote.status === "expired" || timeRemainingMs === 0 ? (
                         <span className="font-semibold text-red-600">Quote expired.</span>
                       ) : (

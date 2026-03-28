@@ -51,7 +51,7 @@ export default function InventoryPage() {
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold">Check inventory (UC-06)</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Mocked inventory CRUD with quantity-based adjustments.
+            Track inventory levels and make quantity adjustments.
           </p>
         </header>
 

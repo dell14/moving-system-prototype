@@ -41,7 +41,7 @@ function LoginPageContent() {
         </Link>
 
         <header className="space-y-1">
-          <h1 className="text-2xl font-semibold">Log in (mock)</h1>
+          <h1 className="text-2xl font-semibold">Log in</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             Demo users: <span className="font-mono">customer@example.com</span>{" "}
             / <span className="font-mono">manager@example.com</span> (password:{" "}
@@ -83,7 +83,7 @@ function LoginPageContent() {
                 );
 
                 if (!isValid) {
-                  setError("Invalid credentials (mock). Try the demo users.");
+                  setError("Invalid credentials. Try the demo users.");
                   return;
                 }
 

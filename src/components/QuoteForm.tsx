@@ -28,6 +28,17 @@ export function QuoteForm({
   const [values, setValues] = useState<QuoteFormState>(initialValues);
   const [errors, setErrors] = useState<QuoteFormErrors>({});
   const [savedValues, setSavedValues] = useState<QuoteFormState>(initialValues);
+  const servicePackage = values.hasPacking
+    ? values.hasStorage
+      ? "packing_storage"
+      : "packing"
+    : values.hasStorage
+      ? "storage"
+      : "move_only";
+  const moveDateTimeValue =
+    values.moveDateISO && values.moveTime
+      ? `${values.moveDateISO}T${values.moveTime}`
+      : "";
 
   const hasUnsavedChanges = useMemo(
     () =>
@@ -105,27 +116,24 @@ export function QuoteForm({
         {errors.toAddress ? <p className="text-xs text-red-600">{errors.toAddress}</p> : null}
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block space-y-1">
-          <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Move date</div>
-          <input
-            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-            value={values.moveDateISO}
-            onChange={(event) => updateField("moveDateISO", event.target.value)}
-          />
-          {errors.moveDateISO ? <p className="text-xs text-red-600">{errors.moveDateISO}</p> : null}
-        </label>
-
-        <label className="block space-y-1">
-          <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Move time</div>
-          <input
-            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-            value={values.moveTime}
-            onChange={(event) => updateField("moveTime", event.target.value)}
-          />
-          {errors.moveTime ? <p className="text-xs text-red-600">{errors.moveTime}</p> : null}
-        </label>
-      </div>
+      <label className="block space-y-1">
+        <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Move date and time</div>
+        <input
+          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+          type="datetime-local"
+          value={moveDateTimeValue}
+          onChange={(event) => {
+            const [datePart = "", timePart = ""] = event.target.value.split("T");
+            updateField("moveDateISO", datePart);
+            updateField("moveTime", timePart.slice(0, 5));
+          }}
+        />
+        {errors.moveDateISO || errors.moveTime ? (
+          <p className="text-xs text-red-600">
+            {errors.moveDateISO ?? errors.moveTime}
+          </p>
+        ) : null}
+      </label>
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block space-y-1">
@@ -153,22 +161,28 @@ export function QuoteForm({
         </label>
       </div>
 
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={values.hasPacking}
-          onChange={(event) => updateField("hasPacking", event.target.checked)}
-        />
-        Add packing service
-      </label>
-
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={values.hasStorage}
-          onChange={(event) => updateField("hasStorage", event.target.checked)}
-        />
-        Add storage
+      <label className="block space-y-1">
+        <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Service package</div>
+        <select
+          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+          value={servicePackage}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            updateField(
+              "hasPacking",
+              nextValue === "packing" || nextValue === "packing_storage",
+            );
+            updateField(
+              "hasStorage",
+              nextValue === "storage" || nextValue === "packing_storage",
+            );
+          }}
+        >
+          <option value="move_only">Move only</option>
+          <option value="packing">Move + packing</option>
+          <option value="storage">Move + storage</option>
+          <option value="packing_storage">Move + packing + storage</option>
+        </select>
       </label>
 
       {errors.form ? <p className="text-xs text-red-600">{errors.form}</p> : null}

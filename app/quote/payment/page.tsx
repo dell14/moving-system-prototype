@@ -143,11 +143,11 @@ function QuotePaymentPageContent() {
           <Link className="text-sm underline" href="/quote">
             ← Back to quote
           </Link>
-          <div className="text-xs text-zinc-500">Secure checkout (mock)</div>
+          <div className="text-xs text-zinc-500">Secure checkout</div>
         </div>
 
         <header className="space-y-2">
-          <h1 className="text-2xl font-semibold">Mock payment</h1>
+          <h1 className="text-2xl font-semibold">Payment</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             This is a simulated checkout to reserve your move. No real charges
             are processed.
@@ -212,7 +212,7 @@ function QuotePaymentPageContent() {
                 <div>
                   <div className="text-xs font-semibold">Payment details</div>
                   <p className="text-xs text-zinc-500">
-                    All fields are required for this mock checkout.
+                    All fields are required for this checkout.
                   </p>
                 </div>
 
@@ -326,7 +326,7 @@ function QuotePaymentPageContent() {
               ) : isExpired ? (
                 <span className="text-red-600">Quote expired.</span>
               ) : (
-                "Timer is running (mock 24h → 3 min)."
+                "Timer is running."
               )}
             </div>
           </aside>

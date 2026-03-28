@@ -22,7 +22,7 @@ export default function BookingPage() {
   );
 
   const [quoteId, setQuoteId] = useState<string>(activeQuotes[0]?.id ?? "");
-  const [depositCents, setDepositCents] = useState<number>(5000); // $50 mock deposit
+  const [depositCents, setDepositCents] = useState<number>(5000);
 
   const myBookings = useMemo(() => {
     if (!activeUser) return [];
@@ -41,8 +41,7 @@ export default function BookingPage() {
             Confirm booking + deposit (UC-03)
           </h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Fully mocked: selecting an active quote and “paying” creates a
-            confirmed booking record.
+            Select an active quote, pay the deposit, and confirm the booking.
           </p>
         </header>
 
@@ -106,7 +105,7 @@ export default function BookingPage() {
               </label>
 
               <button className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900">
-                Pay deposit & confirm (mock)
+                Pay deposit & confirm
               </button>
 
               {activeQuotes.length === 0 ? (
