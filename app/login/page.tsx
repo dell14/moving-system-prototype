@@ -2,11 +2,23 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
 import { getUserDisplayName, getUserPasswordHashOrLegacy } from "@/src/domain/viewAdapters";
 
-export default function LoginPage() {
+function LoginPageFallback() {
+  return (
+    <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
+      <main className="mx-auto w-full max-w-lg space-y-6">
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+          Loading login form...
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function LoginPageContent() {
   const { state, dispatch } = useAppStore();
   const searchParams = useSearchParams();
   const activeUser = useMemo(
@@ -133,5 +145,13 @@ export default function LoginPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginPageFallback />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

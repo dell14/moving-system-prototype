@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
 import {
   getQuoteFromAddress,
@@ -25,7 +25,22 @@ function contextDescription(context: OutcomeContext) {
     : "Tell us why you did not book before this quote expired.";
 }
 
-export default function QuoteOutcomeFeedbackPage() {
+function QuoteOutcomeFeedbackPageFallback() {
+  return (
+    <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
+      <main className="mx-auto w-full max-w-xl space-y-4">
+        <Link className="text-sm underline" href="/quote">
+          {"<-"} Back to quote
+        </Link>
+        <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+          Loading quote feedback...
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function QuoteOutcomeFeedbackPageContent() {
   const { state, dispatch } = useAppStore();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -226,5 +241,13 @@ export default function QuoteOutcomeFeedbackPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function QuoteOutcomeFeedbackPage() {
+  return (
+    <Suspense fallback={<QuoteOutcomeFeedbackPageFallback />}>
+      <QuoteOutcomeFeedbackPageContent />
+    </Suspense>
   );
 }

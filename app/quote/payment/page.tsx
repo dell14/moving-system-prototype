@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
 import {
   getBookingDepositCents,
@@ -23,7 +23,19 @@ type PaymentErrors = {
   zip?: string;
 };
 
-export default function QuotePaymentPage() {
+function QuotePaymentPageFallback() {
+  return (
+    <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
+      <main className="mx-auto w-full max-w-3xl space-y-6">
+        <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+          Loading payment details...
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function QuotePaymentPageContent() {
   const { state, dispatch } = useAppStore();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -321,6 +333,14 @@ export default function QuotePaymentPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function QuotePaymentPage() {
+  return (
+    <Suspense fallback={<QuotePaymentPageFallback />}>
+      <QuotePaymentPageContent />
+    </Suspense>
   );
 }
 

@@ -2,12 +2,24 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { QuoteForm } from "@/src/components/QuoteForm";
 import { getQuoteExpiresAtMs } from "@/src/domain/viewAdapters";
 import { useAppStore } from "@/src/state/AppStore";
 
-export default function EditQuotePage() {
+function EditQuotePageFallback() {
+  return (
+    <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
+      <main className="mx-auto w-full max-w-3xl space-y-6">
+        <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+          Loading quote editor...
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function EditQuotePageContent() {
   const { state, dispatch } = useAppStore();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -106,5 +118,13 @@ export default function EditQuotePage() {
         />
       </main>
     </div>
+  );
+}
+
+export default function EditQuotePage() {
+  return (
+    <Suspense fallback={<EditQuotePageFallback />}>
+      <EditQuotePageContent />
+    </Suspense>
   );
 }
