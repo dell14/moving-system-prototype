@@ -53,7 +53,7 @@ export function AppHeader() {
   );
   const primaryLinks = [
     { href: "/", label: "Home" },
-    { href: "/booking", label: "Booking & Deposit" },
+    { href: "/booking", label: "Booking" },
     { href: "/feedback", label: "Feedback" },
   ];
   const managerLinks =
@@ -75,14 +75,14 @@ export function AppHeader() {
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-zinc-800 dark:bg-black/90">
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
         <div className="flex flex-wrap items-center gap-6">
-          <Link className="space-y-0.5" href="/">
+          <div className="space-y-0.5">
             <div className="text-base font-semibold tracking-[0.18em] text-slate-950 uppercase dark:text-zinc-50">
               SpeedShift Logistics
             </div>
             <div className="text-[11px] text-slate-500 dark:text-zinc-400">
               Moving, delivery, and storage in Montreal
             </div>
-          </Link>
+          </div>
           <nav className="flex flex-wrap items-center gap-5 text-sm">
             {primaryLinks.map((link) => (
               <Link
@@ -124,20 +124,6 @@ export function AppHeader() {
           >
             Get a Quote
           </Link>
-          <button
-            type="button"
-            className="text-[11px] text-slate-400 transition hover:text-slate-600 dark:text-zinc-500 dark:hover:text-zinc-300"
-            onClick={() => {
-              const shouldReset = window.confirm(
-                "Reset all sample data and start from a fresh site state?",
-              );
-              if (!shouldReset) return;
-              setIsPanelOpen(false);
-              dispatch({ type: "db/reset" });
-            }}
-          >
-            Reset sample data
-          </button>
           {hydratedActiveUser ? (
             <button
               type="button"
@@ -161,6 +147,22 @@ export function AppHeader() {
                   {unreadCount}
                 </span>
               ) : null}
+            </button>
+          ) : null}
+          {hydratedActiveUser?.role === "manager" ? (
+            <button
+              type="button"
+              className="text-[11px] text-slate-400 transition hover:text-slate-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+              onClick={() => {
+                const shouldReset = window.confirm(
+                  "Reset all sample data and start from a fresh site state?",
+                );
+                if (!shouldReset) return;
+                setIsPanelOpen(false);
+                dispatch({ type: "db/reset" });
+              }}
+            >
+              Reset sample data
             </button>
           ) : null}
 

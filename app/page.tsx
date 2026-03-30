@@ -12,11 +12,11 @@ export default function Home() {
               </div>
               <div className="space-y-3">
                 <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-slate-950 dark:text-zinc-50">
-                  Reliable booking, delivery, and moving support for homes and businesses.
+                  Reliable moving and logistics support for homes and businesses across Montreal.
                 </h1>
                 <p className="max-w-xl text-base leading-7 text-slate-600 dark:text-zinc-300">
                   SpeedShift Logistics helps customers request quotes, confirm bookings, and stay
-                  organized from first estimate to service day.
+                  organized from first estimate to service day with a clear, practical workflow.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -26,19 +26,13 @@ export default function Home() {
                 >
                   Get a Quote
                 </Link>
-                <Link
-                  className="border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                  href="/booking"
-                >
-                  Confirm Booking & Deposit
-                </Link>
               </div>
               <p className="text-sm text-slate-500 dark:text-zinc-400">
                 Existing customer?{" "}
                 <Link className="font-medium text-slate-800 underline dark:text-zinc-100" href="/login">
                   Log in
                 </Link>{" "}
-                to continue your request.
+                to review an existing request or booking.
               </p>
             </div>
 
@@ -58,38 +52,30 @@ export default function Home() {
         <section className="space-y-4">
           <div className="space-y-1">
             <h2 className="text-2xl font-semibold text-slate-950 dark:text-zinc-50">
-              Plan your service in a few clear steps
+              How the service works
             </h2>
             <p className="text-sm text-slate-600 dark:text-zinc-400">
-              The main customer journeys are available directly from the site.
+              Customers move through a simple service journey from estimate to follow-up.
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {[
               {
-                title: "Get a Quote",
-                copy: "Request an estimate for your move, delivery, or storage needs.",
-                href: "/quote",
-                label: "Start quote",
+                title: "1. Request a Quote",
+                copy: "Share the moving, delivery, or storage details needed for an estimate.",
               },
               {
-                title: "Confirm Booking",
-                copy: "Review your quote and complete the deposit step to reserve service.",
-                href: "/booking",
-                label: "Go to booking",
+                title: "2. Confirm the Booking",
+                copy: "After approval, the customer can complete the deposit and reserve the service date.",
               },
               {
-                title: "Leave Feedback",
-                copy: "Share service feedback after your move so the team can follow up.",
-                href: "/feedback",
-                label: "Open feedback",
+                title: "3. Receive the Service",
+                copy: "Scheduling and coordination continue through the operational workflow.",
               },
               {
-                title: "Customer Log In",
-                copy: "Access your account to continue an existing request or booking.",
-                href: "/login",
-                label: "Log in",
+                title: "4. Share Feedback",
+                copy: "Post-service feedback helps the team follow up and improve future service.",
               },
             ].map((item) => (
               <div
@@ -102,12 +88,6 @@ export default function Home() {
                 <p className="mt-2 min-h-16 text-sm leading-6 text-slate-600 dark:text-zinc-300">
                   {item.copy}
                 </p>
-                <Link
-                  className="mt-4 inline-flex text-sm font-medium text-slate-800 underline underline-offset-4 dark:text-zinc-100"
-                  href={item.href}
-                >
-                  {item.label}
-                </Link>
               </div>
             ))}
           </div>
@@ -127,13 +107,13 @@ export default function Home() {
             </div>
             <div className="grid gap-3 text-sm text-slate-600 dark:text-zinc-300">
               <div className="border border-slate-200 bg-slate-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+                Residential moves, scheduled deliveries, and storage coordination.
+              </div>
+              <div className="border border-slate-200 bg-slate-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                 Reliable quote and booking flow with clear next steps.
               </div>
               <div className="border border-slate-200 bg-slate-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                 Customer communication supported by feedback and notification tools.
-              </div>
-              <div className="border border-slate-200 bg-slate-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
-                Suitable for residential moves, scheduled deliveries, and storage coordination.
               </div>
             </div>
           </div>
