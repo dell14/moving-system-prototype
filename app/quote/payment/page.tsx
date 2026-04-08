@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/src/state/AppStore";
 import {
@@ -12,20 +11,14 @@ import {
   getQuoteToAddress,
   getQuoteTotalCents,
 } from "@/src/domain/viewAdapters";
-import { useUnsavedChangesWarning } from "@/src/hooks/useUnsavedChangesWarning";
-
-type PaymentErrors = {
-  form?: string;
-  amount?: string;
-  name?: string;
-  cardNumber?: string;
-  expiry?: string;
-  cvc?: string;
-  zip?: string;
-};
 
 const FIXED_DEPOSIT_DOLLARS = 100;
 const FIXED_DEPOSIT_CENTS = FIXED_DEPOSIT_DOLLARS * 100;
+
+type CheckoutSessionResponse = {
+  url?: string;
+  error?: string;
+};
 
 function QuotePaymentPageFallback() {
   return (
@@ -47,13 +40,8 @@ function QuotePaymentPageContent() {
   const promptedOutcomeKeyRef = useRef<string | null>(null);
   const bookingConfirmedRef = useRef(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [name, setName] = useState("");
-  const [cardNumber, setCardNumber] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvc, setCvc] = useState("");
-  const [zip, setZip] = useState("");
-  const [errors, setErrors] = useState<PaymentErrors>({});
-  const [submitAttemptCount, setSubmitAttemptCount] = useState(0);
+  const [redirectError, setRedirectError] = useState<string | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -85,18 +73,7 @@ function QuotePaymentPageContent() {
   const effectiveNowMs = pausedQuoteTimer?.startedAtMs ?? nowMs;
   const isExpired = quote ? getQuoteExpiresAtMs(quote) <= effectiveNowMs : false;
   const isDeclined = quote?.status === "declined";
-  const hasUnsavedChanges =
-    !booking &&
-    [name, cardNumber, expiry, cvc, zip].some((value) => value.trim().length > 0);
-  const submitError =
-    submitAttemptCount > 0 && !booking
-      ? "We couldn't confirm your deposit. Please review the form and try again."
-      : undefined;
-
-  useUnsavedChangesWarning({
-    isEnabled: hasUnsavedChanges,
-    message: "Are you sure you want to leave? Your payment form details will be lost.",
-  });
+  const wasCanceled = searchParams.get("canceled") === "1";
 
   useEffect(() => {
     bookingConfirmedRef.current = Boolean(booking);
@@ -164,6 +141,58 @@ function QuotePaymentPageContent() {
     state.db.feedback,
   ]);
 
+  async function handleCheckoutRedirect() {
+    if (!activeUser) {
+      setRedirectError("Please log in to complete payment.");
+      return;
+    }
+
+    if (!quote || quote.userId !== activeUser.id) {
+      setRedirectError("We couldn't find that quote for your account.");
+      return;
+    }
+
+    if (isExpired) {
+      setRedirectError("This quote has expired.");
+      return;
+    }
+
+    if (isDeclined) {
+      setRedirectError("This quote was declined.");
+      return;
+    }
+
+    setRedirectError(null);
+    setIsRedirecting(true);
+
+    try {
+      // Stripe session creation stays on the server so the secret key never reaches the browser.
+      const response = await fetch("/api/stripe/checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          quoteId: quote.id,
+          depositCents: FIXED_DEPOSIT_CENTS,
+        }),
+      });
+
+      const data = (await response.json()) as CheckoutSessionResponse;
+
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || "Unable to start Stripe Checkout.");
+      }
+
+      window.location.assign(data.url);
+    } catch (error) {
+      setRedirectError(
+        error instanceof Error ? error.message : "Unable to start Stripe Checkout.",
+      );
+      setIsRedirecting(false);
+    }
+  }
+
   if (!activeUser) {
     return (
       <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
@@ -184,10 +213,10 @@ function QuotePaymentPageContent() {
       <div className="min-h-screen bg-zinc-50 px-6 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">
         <main className="mx-auto w-full max-w-xl space-y-4">
           <Link className="text-sm underline" href="/quote">
-            ← Back to quote
+            {"<-"} Back to quote
           </Link>
           <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-            We couldn’t find that quote. Please generate a new one.
+            We couldn&apos;t find that quote. Please generate a new one.
           </div>
         </main>
       </div>
@@ -199,7 +228,7 @@ function QuotePaymentPageContent() {
       <main className="mx-auto w-full max-w-3xl space-y-6">
         <div className="flex items-center justify-between">
           <Link className="text-sm underline" href="/quote">
-            ← Back to quote
+            {"<-"} Back to quote
           </Link>
           <div className="text-xs text-zinc-500">Secure checkout</div>
         </div>
@@ -207,10 +236,15 @@ function QuotePaymentPageContent() {
         <header className="space-y-2">
           <h1 className="text-2xl font-semibold">Payment</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            This is a simulated checkout to reserve your move. No real charges
-            are processed.
+            Continue to Stripe&apos;s hosted test checkout to reserve your move.
           </p>
         </header>
+
+        {wasCanceled && !booking ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950 dark:text-amber-100">
+            Your Stripe test payment was canceled. You can review the quote and try again.
+          </div>
+        ) : null}
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="space-y-4">
@@ -224,7 +258,7 @@ function QuotePaymentPageContent() {
                   Deposit paid: ${(getBookingDepositCents(booking) / 100).toFixed(2)}
                 </div>
                 <p className="mt-2 text-xs text-emerald-900/80 dark:text-emerald-100/70">
-                  We’ll email your confirmation shortly.
+                  We&apos;ll email your confirmation shortly.
                 </p>
               </div>
             ) : (
@@ -232,54 +266,13 @@ function QuotePaymentPageContent() {
                 className="space-y-4 rounded-xl border border-zinc-200 bg-white p-6 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (!activeUser) {
-                    setErrors({ form: "Please log in to complete payment." });
-                    return;
-                  }
-                  if (!quote || quote.userId !== activeUser.id) {
-                    setErrors({
-                      form: "We couldn't find that quote for your account.",
-                    });
-                    return;
-                  }
-                  if (isExpired) {
-                    setErrors({ amount: "This quote has expired." });
-                    return;
-                  }
-                  if (isDeclined) {
-                    setErrors({ amount: "This quote was declined." });
-                    return;
-                  }
-                  const nextErrors: PaymentErrors = {};
-                  const normalizedCard = cardNumber.replace(/\s+/g, "");
-                  if (!name.trim()) nextErrors.name = "Enter the cardholder name.";
-                  if (!/^\d{16}$/.test(normalizedCard))
-                    nextErrors.cardNumber = "Enter a 16-digit card number.";
-                  if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(expiry))
-                    nextErrors.expiry = "Use MM/YY format.";
-                  if (!/^\d{3,4}$/.test(cvc))
-                    nextErrors.cvc = "Enter a 3 or 4 digit CVC.";
-                  if (!zip.trim())
-                    nextErrors.zip = "Enter the billing ZIP or postal code.";
-                  if (Object.keys(nextErrors).length > 0) {
-                    setErrors(nextErrors);
-                    return;
-                  }
-                  setErrors({});
-                  setSubmitAttemptCount((count) => count + 1);
-                  dispatch({
-                    type: "booking/confirm",
-                    payload: {
-                      quoteId: quote.id,
-                      depositCents: FIXED_DEPOSIT_CENTS,
-                    },
-                  });
+                  void handleCheckoutRedirect();
                 }}
               >
                 <div>
                   <div className="text-xs font-semibold">Payment details</div>
                   <p className="text-xs text-zinc-500">
-                    All fields are required for this checkout.
+                    Stripe collects the test card details on the next screen.
                   </p>
                 </div>
 
@@ -290,90 +283,24 @@ function QuotePaymentPageContent() {
                     value={`$${FIXED_DEPOSIT_DOLLARS.toFixed(2)}`}
                     readOnly
                   />
-                  {errors.amount ? (
-                    <p className="text-xs text-red-600">{errors.amount}</p>
-                  ) : null}
                 </label>
 
-                <label className="block space-y-1">
-                  <div className="text-xs text-zinc-500">Cardholder name</div>
-                  <input
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder="Jordan Lee"
-                  />
-                  {errors.name ? (
-                    <p className="text-xs text-red-600">{errors.name}</p>
-                  ) : null}
-                </label>
-
-                <label className="block space-y-1">
-                  <div className="text-xs text-zinc-500">Card number</div>
-                  <input
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    value={cardNumber}
-                    onChange={(event) => setCardNumber(event.target.value)}
-                    placeholder="4242 4242 4242 4242"
-                  />
-                  {errors.cardNumber ? (
-                    <p className="text-xs text-red-600">{errors.cardNumber}</p>
-                  ) : null}
-                </label>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block space-y-1">
-                    <div className="text-xs text-zinc-500">Expiry</div>
-                    <input
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                      value={expiry}
-                      onChange={(event) => setExpiry(event.target.value)}
-                      placeholder="MM/YY"
-                    />
-                    {errors.expiry ? (
-                      <p className="text-xs text-red-600">{errors.expiry}</p>
-                    ) : null}
-                  </label>
-
-                  <label className="block space-y-1">
-                    <div className="text-xs text-zinc-500">CVC</div>
-                    <input
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                      value={cvc}
-                      onChange={(event) => setCvc(event.target.value)}
-                      placeholder="123"
-                    />
-                    {errors.cvc ? (
-                      <p className="text-xs text-red-600">{errors.cvc}</p>
-                    ) : null}
-                  </label>
+                <div className="rounded-lg border border-dashed border-zinc-200 p-4 text-xs text-zinc-500 dark:border-zinc-800">
+                  This prototype still keeps all booking records mocked locally. A successful
+                  Stripe test payment will return here and then finalize the existing mock booking
+                  flow.
                 </div>
 
-                <label className="block space-y-1">
-                  <div className="text-xs text-zinc-500">Billing ZIP / postal code</div>
-                  <input
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    value={zip}
-                    onChange={(event) => setZip(event.target.value)}
-                    placeholder="94107 or H2X 1Y4"
-                  />
-                  {errors.zip ? (
-                    <p className="text-xs text-red-600">{errors.zip}</p>
-                  ) : null}
-                </label>
-
-                {errors.form ? (
-                  <p className="text-xs text-red-600">{errors.form}</p>
-                ) : submitError ? (
-                  <p className="text-xs text-red-600">{submitError}</p>
+                {redirectError ? (
+                  <p className="text-xs text-red-600">{redirectError}</p>
                 ) : null}
 
                 <button
                   type="submit"
                   className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-300 dark:bg-zinc-50 dark:text-zinc-900 dark:disabled:bg-zinc-700"
-                  disabled={isExpired || isDeclined}
+                  disabled={isExpired || isDeclined || isRedirecting}
                 >
-                  Pay deposit & reserve
+                  {isRedirecting ? "Redirecting to Stripe..." : "Pay deposit & reserve"}
                 </button>
               </form>
             )}
@@ -391,8 +318,12 @@ function QuotePaymentPageContent() {
                 ${(getQuoteTotalCents(quote) / 100).toFixed(2)}
               </span>
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-zinc-500">Deposit</span>
+              <span className="font-semibold">${FIXED_DEPOSIT_DOLLARS.toFixed(2)}</span>
+            </div>
             <div className="text-xs text-zinc-500">
-              {getQuoteFromAddress(quote)} → {getQuoteToAddress(quote)}
+              {getQuoteFromAddress(quote)} {"->"} {getQuoteToAddress(quote)}
             </div>
             <div className="rounded-lg border border-dashed border-zinc-200 p-3 text-xs text-zinc-500 dark:border-zinc-700">
               {isDeclined ? (
@@ -419,4 +350,3 @@ export default function QuotePaymentPage() {
     </Suspense>
   );
 }
-

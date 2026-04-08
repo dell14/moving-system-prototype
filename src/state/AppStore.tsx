@@ -1,8 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useReducer } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef } from "react";
 import type { MockDb } from "@/src/mockDb/types";
-import { getDb, resetDb, saveDb } from "@/src/mockDb/db";
+import { loadPersistedDb, resetDb, saveDb } from "@/src/mockDb/db";
+import { seedDb } from "@/src/mockDb/seed";
 import {
   addAvailability,
   addInventoryItem,
@@ -31,6 +32,7 @@ type AppState = {
 };
 
 type Action =
+  | { type: "db/hydrate"; payload: { db: MockDb } }
   | { type: "db/reset" }
   | { type: "auth/login"; payload: { email: string; password: string } }
   | {
@@ -133,6 +135,10 @@ function reducer(state: AppState, action: Action): AppState {
   const db = structuredClone(state.db);
 
   switch (action.type) {
+    case "db/hydrate": {
+      return { ...state, db: structuredClone(action.payload.db) };
+    }
+
     case "db/reset": {
       return { db: resetDb(), pausedQuoteTimer: null };
     }
@@ -303,12 +309,28 @@ const AppStoreContext = createContext<{
 } | null>(null);
 
 export function AppStoreProvider({ children }: { children: React.ReactNode }) {
+  const hasLoadedPersistedDbRef = useRef(false);
+  const hasSkippedInitialSaveRef = useRef(false);
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
-    db: getDb(),
+    // Start from the static seed on both server and client to avoid hydration mismatches.
+    db: seedDb(),
     pausedQuoteTimer: null,
   }));
 
   useEffect(() => {
+    const persistedDb = loadPersistedDb();
+    if (persistedDb) {
+      dispatch({ type: "db/hydrate", payload: { db: persistedDb } });
+    }
+    hasLoadedPersistedDbRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedPersistedDbRef.current) return;
+    if (!hasSkippedInitialSaveRef.current) {
+      hasSkippedInitialSaveRef.current = true;
+      return;
+    }
     saveDb(state.db);
   }, [state.db]);
 

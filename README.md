@@ -67,3 +67,29 @@ Install dependencies:
 
 ```bash
 npm install
+```
+
+Create a `.env.local` file in the project root for Stripe test mode:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_your_test_secret_key_here
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_your_test_publishable_key_here
+```
+
+Run the app locally:
+
+```bash
+npm run dev
+```
+
+Stripe test checkout notes:
+
+- This prototype uses Stripe Checkout in test mode only.
+- The hosted checkout session is created by `app/api/stripe/checkout-session/route.ts`.
+- The existing booking/payment records in the app remain mocked in local storage.
+- A successful Stripe test payment returns to `/quote/payment/success`, which then runs the existing mock booking confirmation flow.
+
+Stripe test card:
+
+- Card number: `4242 4242 4242 4242`
+- Use any future expiry date, any 3-digit CVC, and any ZIP/postal code.

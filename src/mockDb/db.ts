@@ -415,6 +415,10 @@ function readDbFromStorage(): MockDb | undefined {
   }
 }
 
+export function loadPersistedDb(): MockDb | undefined {
+  return readDbFromStorage();
+}
+
 function clearPrototypeStorage(): void {
   if (typeof window === "undefined") return;
   try {
