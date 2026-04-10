@@ -39,12 +39,13 @@ function QuotePaymentSuccessContent() {
       return;
     }
 
+    const verifiedSessionId = sessionId;
     let isCancelled = false;
 
     async function verifySession() {
       try {
         const response = await fetch(
-          `/api/stripe/checkout-session?session_id=${encodeURIComponent(sessionId)}`,
+          `/api/stripe/checkout-session?session_id=${encodeURIComponent(verifiedSessionId)}`,
         );
         const data = (await response.json()) as CheckoutVerification & { error?: string };
 
