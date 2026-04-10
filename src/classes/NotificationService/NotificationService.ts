@@ -98,4 +98,10 @@ export class NotificationService {
       )
       .filter((record): record is NotificationRecord => Boolean(record));
   }
+
+  GenerateNotificationMessage(message: string): string {
+    return message.trim();
+  }
+
+  LogDeliveryStatus(): void {}
 }

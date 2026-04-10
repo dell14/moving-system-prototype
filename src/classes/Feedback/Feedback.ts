@@ -58,6 +58,22 @@ export class Feedback {
     return true;
   }
 
+  provideFeedback(): void {}
+
+  retrieve(): void {}
+
+  showError(): void {}
+
+  storeFeedback(repository?: FeedbackRepository): void {
+    if (repository) {
+      repository.save(this.toPersistence());
+    }
+  }
+
+  confirmFeedback(): void {
+    this.submissionDate = new Date();
+  }
+
   toPersistence(): PersistableFeedback {
     return {
       recordId: this.recordId,

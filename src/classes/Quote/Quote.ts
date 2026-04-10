@@ -157,6 +157,10 @@ export class Quote {
     }
   }
 
+  validateForm(): boolean {
+    return this.validate();
+  }
+
   generate(): boolean {
     if (!Number.isFinite(this.totalCost) || this.totalCost <= 0) {
       this.totalCost = Quote.estimateTotalCents(this.input) / 100;
@@ -208,12 +212,18 @@ export class Quote {
     return true;
   }
 
+  denied(): void {
+    this.decline();
+  }
+
   getAvailability(slots: ServiceSlot[] = []): ServiceSlot[] {
     return slots.filter((slot) => {
       const slotDateIso = slot.date.toISOString().slice(0, 10);
       return slotDateIso === this.moveDateISO && slot.confirmAvailability();
     });
   }
+
+  getClientContact(): void {}
 
   private assertValid(): void {
     if (!this.startAddress.trim()) {

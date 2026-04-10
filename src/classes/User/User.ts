@@ -78,4 +78,12 @@ export class User {
   isSessionActive(): boolean {
     return this.sessionActive;
   }
+
+  requestNewAccountRegistration(): void {
+    this.deactivate();
+  }
+
+  displayRegistrationForm(): void {
+    this.logout();
+  }
 }

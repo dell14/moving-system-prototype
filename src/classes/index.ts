@@ -1,10 +1,13 @@
 export { User } from "./User";
+export { AccountService } from "./AccountService";
 export { OperationsManager } from "./OperationsManager";
 export { Client } from "./Client";
+export { Employee } from "./Employee";
 export { Quote } from "./Quote";
 export { ServiceSlot } from "./ServiceSlot";
 export { Booking } from "./Booking";
 export { Payment } from "./Payment";
 export { Feedback } from "./Feedback";
+export { FeedbackStorage } from "./FeedbackStorage";
 export { InventoryItem } from "./InventoryItem";
 export { NotificationService } from "./NotificationService";

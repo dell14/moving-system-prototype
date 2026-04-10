@@ -151,4 +151,31 @@ export class Client extends User {
     const didSubmit = feedback.submit(repository);
     return didSubmit ? feedback : undefined;
   }
+
+  declineQuote(quote: Quote): Booking | undefined {
+    if (!quote.decline()) return undefined;
+    return undefined;
+  }
+
+  editQuote(
+    quote: Quote,
+    updates: Partial<Pick<Quote, "startAddress" | "endAddress" | "moveDateISO" | "moveTime" | "distanceKm" | "itemsCount" | "hasPacking" | "hasStorage">>,
+  ): Quote {
+    Object.assign(quote, updates);
+    quote.generate();
+    return quote;
+  }
+
+  enterFeedback(input: Omit<ConstructorParameters<typeof Feedback>[0], "submissionDate"> & {
+    submissionDate?: Date;
+  }): Feedback {
+    return new Feedback({
+      ...input,
+      submissionDate: input.submissionDate ?? new Date(),
+    });
+  }
+
+  exitFeedback(feedback: Feedback): Feedback {
+    return feedback;
+  }
 }

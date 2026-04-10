@@ -64,4 +64,12 @@ export class ServiceSlot {
     }
     return true;
   }
+
+  displayAvailableTimeslots(slots: ServiceSlot[] = []): ServiceSlot[] {
+    return slots.filter((slot) => slot.confirmAvailability());
+  }
+
+  updateAvailability(status: "available" | "held" | "reserved" = this.status): void {
+    this.status = status;
+  }
 }
